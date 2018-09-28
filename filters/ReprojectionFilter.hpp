@@ -63,6 +63,7 @@ private:
     SpatialReference m_inSRS;
     SpatialReference m_outSRS;
     bool m_inferInputSRS;
+    bool m_override;
 
     typedef void* ReferencePtr;
     typedef void* TransformPtr;

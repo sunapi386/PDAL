@@ -59,6 +59,7 @@ std::string ReprojectionFilter::getName() const { return s_info.name; }
 
 ReprojectionFilter::ReprojectionFilter()
     : m_inferInputSRS(true)
+    , m_override(true)
     , m_in_ref_ptr(NULL)
     , m_out_ref_ptr(NULL)
     , m_transform_ptr(NULL)
@@ -80,12 +81,14 @@ void ReprojectionFilter::addArgs(ProgramArgs& args)
 {
     args.add("out_srs", "Output spatial reference", m_outSRS).setPositional();
     args.add("in_srs", "Input spatial reference", m_inSRS);
+    args.add("override", "Override inferred SRS with in_srs value", m_override,
+            true);
 }
 
 
 void ReprojectionFilter::initialize()
 {
-    m_inferInputSRS = m_inSRS.empty();
+    m_inferInputSRS = m_inSRS.empty() || !m_override;
 
     m_out_ref_ptr = OSRNewSpatialReference(m_outSRS.getWKT().c_str());
     if (!m_out_ref_ptr)
@@ -102,11 +105,11 @@ void ReprojectionFilter::spatialReferenceChanged(const SpatialReference& srs)
 }
 
 
-void ReprojectionFilter::createTransform(const SpatialReference& srsSRS)
+void ReprojectionFilter::createTransform(const SpatialReference& srs)
 {
     if (m_inferInputSRS)
     {
-        m_inSRS = srsSRS;
+        m_inSRS = srs;
         if (m_inSRS.empty())
             throwError("source data has no spatial reference and "
                 "none is specified with the 'in_srs' option.");
