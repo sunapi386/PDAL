@@ -108,16 +108,31 @@ private:
         Bounds& boundsArg() { return m_bounds; }
         BOX3D bounds() const;
 
-        std::string& originArg() { return m_originArg; }
-        const std::string& origin() const { return m_originArg; }
-
+        std::string& originArg() { return m_origin; }
         uint64_t& threadsArg() { return m_threads; }
+        double& resolution2dArg() { return m_resolution2d; }
+        double& resolution3dArg() { return m_resolution3d; }
+
+        std::string origin() const { return m_origin; }
         uint64_t threads() const { return std::max<uint64_t>(4, m_threads); }
+        double spacing() const
+        {
+            if (m_resolution2d && m_resolution3d)
+                throw std::runtime_error(
+                        "Cannot supply both 2D and 3D resolutions");
+            if (m_resolution2d)
+                return 1.0 / std::sqrt(m_resolution2d);
+            if (m_resolution3d)
+                return 1.0 / std::cbrt(m_resolution3d);
+            return 0;
+        }
 
     private:
         Bounds m_bounds;
-        std::string m_originArg;
-        uint64_t m_threads;
+        std::string m_origin;
+        uint64_t m_threads = 0;
+        double m_resolution2d = 0;
+        double m_resolution3d = 0;
     };
 
     Args m_args;
@@ -129,6 +144,7 @@ private:
 
     std::set<Key> m_overlapKeys;
     uint64_t m_overlapPoints = 0;
+    uint64_t m_depthEnd = 0;
 
     std::unique_ptr<FixedPointLayout> m_remoteLayout;
     DimTypeList m_dimTypes;
