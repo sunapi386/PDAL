@@ -288,3 +288,8 @@ if(PDAL_HAVE_LIBXML2)
             ${LIBXML2_INCLUDE_DIR}
     )
 endif()
+
+if(BUILD_PLUGIN_AUTOXBF)
+    PDAL_ADD_TEST(pdal_io_autoxbf_reader_test FILES io/AutoXBFReaderTest.cpp)
+    PDAL_ADD_TEST(pdal_io_autoxbf_writer_test FILES io/AutoXBFWriterTest.cpp)
+endif()

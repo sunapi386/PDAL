@@ -98,6 +98,11 @@ option(BUILD_PLUGIN_FBX
 add_feature_info("FBX plugin" BUILD_PLUGIN_FBX
     "add features that depend on FBX")
 
+option(BUILD_PLUGIN_AUTOXBF
+        "Choose if AutoX BF file support should be built" FALSE)
+add_feature_info("AutoX BF plugin" BUILD_PLUGIN_AUTOXBF
+        "write data to a binary flow file")
+
 option(BUILD_TOOLS_NITFWRAP "Choose if nitfwrap tool should be built" FALSE)
 
 option(WITH_TESTS
