@@ -1,19 +1,19 @@
 #pragma once
 
 #include <pdal/Writer.hpp>
-#include <pdal/StageFactory.hpp>
 
-#include <vector>
 #include <string>
 
-pdal::Writer* createGeoWaveWriter();
+namespace pdal{
 
-namespace pdal
-{
+    typedef std::shared_ptr<std::ostream> FileStreamPtr;
 
-    class PDAL_DLL GeoWaveWriter : public Writer
+    class MyWriter : public Writer
     {
     public:
+        MyWriter()
+        {}
+
         std::string getName() const;
 
     private:
@@ -21,20 +21,15 @@ namespace pdal
         virtual void initialize();
         virtual void ready(PointTableRef table);
         virtual void write(const PointViewPtr view);
+        virtual void done(PointTableRef table);
 
-        int createJvm();
+        std::string m_filename;
+        std::string m_newline;
+        std::string m_datafield;
+        int m_precision;
 
-        std::string m_zookeeperUrl;
-        std::string m_instanceName;
-        std::string m_username;
-        std::string m_password;
-        std::string m_tableNamespace;
-        std::string m_featureTypeName;
-        std::string m_dataAdapter;
-        bool m_useFeatCollDataAdapter;
-        uint32_t m_pointsPerEntry;
-        Dimension::IdList m_dims;
-        std::vector<Dimension::Type> m_dimTypes;
+        FileStreamPtr m_stream;
+        Dimension::Id m_dataDim;
     };
 
 } // namespace pdal

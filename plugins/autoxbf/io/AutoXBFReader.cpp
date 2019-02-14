@@ -1,5 +1,6 @@
 #include "AutoXBFReader.hpp"
 #include <pdal/util/ProgramArgs.hpp>
+#include "autox_datum_writer.h"
 
 namespace pdal
 {
@@ -16,7 +17,7 @@ namespace pdal
 
     void AutoXBFReader::addArgs(ProgramArgs& args)
     {
-        args.add("z_scale", "Z Scaling", m_scale_z, 1.0);
+        args.add("gps", "GPS RTK file", m_scale_z, 1.0);
     }
 
     // corresponds to bf::msg::LidarPoint
