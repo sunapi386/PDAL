@@ -89,9 +89,9 @@ Height from the vehicle is physically measured into txt file.
         m_stream.reset(new ILeStream(m_filename));
 
         // this skips lines, we don't have a header so we don't need this
-//        size_t HEADERSIZE(1);
-//        size_t skip_lines((std::max)(HEADERSIZE, (size_t)m_index));
-//        size_t line_no(1);
+        size_t HEADERSIZE(1);
+        size_t skip_lines((std::max)(HEADERSIZE, (size_t)m_index));
+        size_t line_no(1);
 
         // each line thereafter is a single point
         for (std::string line; std::getline(*m_stream->stream(), line); line_no++)
