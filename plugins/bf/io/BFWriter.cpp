@@ -1,6 +1,6 @@
 // MyWriter.cpp
 
-#include "AutoXBFWriter.hpp"
+#include "BFWriter.hpp"
 #include <pdal/util/FileUtils.hpp>
 #include <pdal/util/ProgramArgs.hpp>
 

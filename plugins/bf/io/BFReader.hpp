@@ -3,7 +3,8 @@
 #include <pdal/PointView.hpp>
 #include <pdal/Reader.hpp>
 #include <pdal/util/IStream.hpp>
-#include "autox_datum_parser.h"
+#include "bf_datum_parser.h"
+#include "BFCommon.hpp"
 
 /*
 decimal
@@ -26,22 +27,20 @@ Height from the vehicle is physically measured into txt file.
 
 namespace pdal
 {
-class AutoXBFReader : public Reader
+class PDAL_DLL BFReader : public Reader
 {
 public:
-    AutoXBFReader() : Reader() {};
+    BFReader() : Reader() {};
     std::string getName() const override;
 
 private:
-    std::string m_filenameRtk;
-    std::string m_filenameLidar;
-    std::string m_filenameTransf;
+    BFArgs m_args;
     point_count_t m_numPts;
     uint8_t m_expected_no_fields = 8;
-    bf::DatumParser datumParserRtk;
-    bf::DatumParser datumParserLidar;
+    std::unique_ptr<bf::DatumParser> m_datumParserRtk;
+//    bf::DatumParser m_datumParserLidar;
+//    std::istream m_istreamTransf;
 
-    std::istream* m_istream;
     void initialize(PointTableRef table) override;
     void addDimensions(PointLayoutPtr layout) override;
     void addArgs(ProgramArgs& args) override;

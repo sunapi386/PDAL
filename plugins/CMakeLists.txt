@@ -88,6 +88,6 @@ if (BUILD_PLUGIN_FBX)
     add_subdirectory(fbx)
 endif()
 
-if(BUILD_PLUGIN_AUTOXBF)
-    add_subdirectory(autoxbf)
+if(BUILD_PLUGIN_BF)
+    add_subdirectory(bf)
 endif()

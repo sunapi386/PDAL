@@ -14,9 +14,9 @@
 #    message("PCL not found!")
 #endif ()
 #
-find_package(AUTOXBF REQUIRED)
-if (AUTOXBF_FOUND)
-    include_directories(${AUTOXBF_INCLUDE_DIR})
+find_package(BF REQUIRED)
+if (BF_FOUND)
+    include_directories(${BF_INCLUDE_DIR})
 else ()
-    message("AUTOXBF not found!")
+    message("BF not found!")
 endif ()

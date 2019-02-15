@@ -1,32 +1,32 @@
-#include "AutoXBFReader.hpp"
+#include "BFReader.hpp"
 #include <pdal/util/ProgramArgs.hpp>
 
 namespace pdal
 {
 static StaticPluginInfo const s_info
 {
-    "readers.autoxbf",
-    "AutoXBF Reader",
-    "https://autox.ai",
-    { "bf", "autoxbf" }
+    "readers.bf",
+    "BF Reader",
+    "https://example.com",
+    { "bf" }
 };
 
-CREATE_SHARED_STAGE(AutoXBFReader, s_info)
+CREATE_SHARED_STAGE(BFReader, s_info)
 
-std::string AutoXBFReader::getName() const
+std::string BFReader::getName() const
 {
     return s_info.name;
 }
 
-void AutoXBFReader::addArgs(ProgramArgs& args)
+void BFReader::addArgs(ProgramArgs& args)
 {
-    args.add("rtk,r", "Path to BF RTK file", m_filenameRtk);
-    args.add("lidar,l", "Path to BF lidar file", m_filenameLidar);
-    args.add("trans,t", "Path to intrinsic/extrinsic lidar/cam transform file", m_filenameTransf);
+    args.add("rtk,r", "Path to BF RTK file", m_args.fileRtk);
+    args.add("lidar,l", "Path to BF lidar file", m_args.fileLidar);
+    args.add("trans,t", "Path to intrinsic/extrinsic lidar/cam transform file", m_args.fileTransf);
 }
 
 // corresponds to bf::msg::LidarPoint
-void AutoXBFReader::addDimensions(PointLayoutPtr layout)
+void BFReader::addDimensions(PointLayoutPtr layout)
 {
     layout->registerDim(Dimension::Id::X); // lat,lng
     layout->registerDim(Dimension::Id::Y);
@@ -40,7 +40,7 @@ void AutoXBFReader::addDimensions(PointLayoutPtr layout)
 //        layout->registerDim(Dimension::Id::PointSourceId); // which frame id this point is from
 }
 
-void AutoXBFReader::ready(PointTableRef)
+void BFReader::ready(PointTableRef)
 {
     SpatialReference ref("EPSG:3857");
     setSpatialReference(ref);
@@ -62,18 +62,27 @@ T convert(const StringList& s, const std::string& name, size_t fieldno)
 }
 
 
-point_count_t AutoXBFReader::read(PointViewPtr view, point_count_t count)
+point_count_t BFReader::read(PointViewPtr view, point_count_t count)
 {
     PointLayoutPtr layout = view->layout();
     PointId nextId = view->size(); // ID of the point incremented in each iteration of the loop
     point_count_t beginId = nextId;
-    log()->get(LogLevel::Info) << "AutoXBFReader m_filename: " << m_filename << std::endl;
+    log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
 
     size_t HEADERSIZE(1);
     size_t line_no(1);
 
+    bf::Datum datumRtk {};
+    uint nRtk = 0;
+    while (m_datumParserRtk->GetDatum(datumRtk)) {
+        nRtk++;
+
+        free(datumRtk.data);
+    }
+
     // each line thereafter is a single point
-    for (std::string line; std::getline(*m_istream, line); line_no++)
+/*
+    for (std::string line; std::getline(*m_istreamTransf, line); line_no++)
     {
         log()->get(LogLevel::Debug4) << line_no << ": " << line << std::endl;
         if (line_no <= HEADERSIZE)
@@ -81,7 +90,7 @@ point_count_t AutoXBFReader::read(PointViewPtr view, point_count_t count)
             continue;
         }
 
-        // AutoXBFReader format:  X::Y::Z::Data
+        // BFReader format:  X::Y::Z::Data
         // Here we take the line we read in the for block header, split it, and
         StringList s = Utils::split2(line, ':');
 
@@ -109,23 +118,37 @@ point_count_t AutoXBFReader::read(PointViewPtr view, point_count_t count)
         if (m_cb)
             m_cb(*view, nextId);
     }
+*/
     m_numPts = nextId - beginId;
 
     return m_numPts;
 }
 
-void AutoXBFReader::done(PointTableRef)
+void BFReader::done(PointTableRef)
 {
-    Utils::closeFile(m_istream);
+//    Utils::closeFile(m_istreamTransf);
 }
 
-void AutoXBFReader::initialize(BasePointTable &table)
+void BFReader::initialize(BasePointTable &table)
 {
     m_numPts = 0;
-    m_istream = Utils::openFile(m_filename, false);
-    if (!m_istream)
-        throwError("Unable to open text file '" + m_filename + "'.");
 
+    if (!m_args.fileRtk.empty())
+    {
+        m_datumParserRtk = std::unique_ptr<bf::DatumParser>(new bf::DatumParser(m_args.fileRtk));
+    }
+
+
+//    if (!m_args.fileLidar.empty())
+//    {
+//        m_datumParserLidar = bf::DatumParser(m_args.fileLidar);
+//    }
+//    if (!m_args.fileTransf.empty())
+//    {
+//        m_istreamTransf = Utils::openFile(m_filename, false);
+//    if (!m_istreamTransf)
+//      throwError("Unable to open text file '" + m_filename + "'.");
+//    }
 
 }
 
