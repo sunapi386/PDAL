@@ -3,6 +3,7 @@
 #include <pdal/PointView.hpp>
 #include <pdal/Reader.hpp>
 #include <pdal/util/IStream.hpp>
+#include "autox_datum_parser.h"
 
 /*
 decimal
@@ -25,25 +26,27 @@ Height from the vehicle is physically measured into txt file.
 
 namespace pdal
 {
-    class AutoXBFReader : public Reader
-    {
-    public:
-        AutoXBFReader() : Reader() {};
-        std::string getName() const override;
+class AutoXBFReader : public Reader
+{
+public:
+    AutoXBFReader() : Reader() {};
+    std::string getName() const override;
 
-    private:
-        std::string m_rtk;
-        std::string m_lidar;
-        std::string m_rig;
-        point_count_t m_numPts;
-        uint8_t m_expected_no_fields = 8;
+private:
+    std::string m_filenameRtk;
+    std::string m_filenameLidar;
+    std::string m_filenameTransf;
+    point_count_t m_numPts;
+    uint8_t m_expected_no_fields = 8;
+    bf::DatumParser datumParserRtk;
+    bf::DatumParser datumParserLidar;
 
-        std::istream* m_istream;
-        void initialize(PointTableRef table) override;
-        void addDimensions(PointLayoutPtr layout) override;
-        void addArgs(ProgramArgs& args) override;
-        void ready(PointTableRef table) override;
-        point_count_t read(PointViewPtr view, point_count_t count) override;
-        void done(PointTableRef table) override;
-    };
+    std::istream* m_istream;
+    void initialize(PointTableRef table) override;
+    void addDimensions(PointLayoutPtr layout) override;
+    void addArgs(ProgramArgs& args) override;
+    void ready(PointTableRef table) override;
+    point_count_t read(PointViewPtr view, point_count_t count) override;
+    void done(PointTableRef table) override;
+};
 }

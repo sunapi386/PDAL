@@ -4,32 +4,33 @@
 
 #include <string>
 
-namespace pdal{
+namespace pdal
+{
 
-    typedef std::shared_ptr<std::ostream> FileStreamPtr;
+typedef std::shared_ptr<std::ostream> FileStreamPtr;
 
-    class MyWriter : public Writer
-    {
-    public:
-        MyWriter()
-        {}
+class MyWriter : public Writer
+{
+public:
+    MyWriter()
+    {}
 
-        std::string getName() const;
+    std::string getName() const;
 
-    private:
-        virtual void addArgs(ProgramArgs& args);
-        virtual void initialize();
-        virtual void ready(PointTableRef table);
-        virtual void write(const PointViewPtr view);
-        virtual void done(PointTableRef table);
+private:
+    virtual void addArgs(ProgramArgs& args);
+    virtual void initialize();
+    virtual void ready(PointTableRef table);
+    virtual void write(const PointViewPtr view);
+    virtual void done(PointTableRef table);
 
-        std::string m_filename;
-        std::string m_newline;
-        std::string m_datafield;
-        int m_precision;
+    std::string m_filename;
+    std::string m_newline;
+    std::string m_datafield;
+    int m_precision;
 
-        FileStreamPtr m_stream;
-        Dimension::Id m_dataDim;
-    };
+    FileStreamPtr m_stream;
+    Dimension::Id m_dataDim;
+};
 
 } // namespace pdal
