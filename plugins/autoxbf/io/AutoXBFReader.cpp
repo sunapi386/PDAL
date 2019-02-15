@@ -4,11 +4,12 @@
 
 namespace pdal
 {
-    static PluginInfo const s_info
+    static StaticPluginInfo const s_info
         {
             "readers.autoxbf",
             "AutoXBF Reader",
-            "jsun@autox.ai"
+            "https://autox.ai",
+            { "bf", "autoxbf" }
         };
 
     CREATE_SHARED_STAGE(AutoXBFReader, s_info)
@@ -17,44 +18,24 @@ namespace pdal
 
     void AutoXBFReader::addArgs(ProgramArgs& args)
     {
-        args.add("gps", "GPS RTK file", m_scale_z, 1.0);
+      args.add("rtk", "Path to the BF RTK file", m_rtk);
+      args.add("lidar", "Path to the BF lidar file", m_lidar);
+      args.add("rig", "Path to intrinsic/extrinsic lidar/cam measurement files", m_rig);
     }
 
     // corresponds to bf::msg::LidarPoint
     void AutoXBFReader::addDimensions(PointLayoutPtr layout)
     {
-/*
-decimal
-places   degrees          distance
--------  -------          --------
-0        1                111  km
-1        0.1              11.1 km
-2        0.01             1.11 km
-3        0.001            111  m
-4        0.0001           11.1 m
-5        0.00001          1.11 m
-6        0.000001         11.1 cm
-7        0.0000001        1.11 cm
-8        0.00000001       1.11 mm
-We would not need more than 8 digits accuracy with lat/lng.
-Lidar x,y,z are in metres (the driver that captures the BF dump ensures this)
-and the center 0, 0, 0 is the inside of the lidar.
-Height from the vehicle is physically measured into txt file.
- */
         layout->registerDim(Dimension::Id::X); // lat,lng
         layout->registerDim(Dimension::Id::Y);
         layout->registerDim(Dimension::Id::Z);
         layout->registerDim(Dimension::Id::Intensity);
         layout->registerDim(Dimension::Id::InternalTime); // timestamp
         layout->registerDim(Dimension::Id::GpsTime);      // from rtk
-        // for future work
-//        layout->registerDim(Dimension::Id::PointId); // laser_id (e.g. 40 beam lidar has id 0-40)
-//        layout->registerDim(Dimension::Id::ScanAngleRank); // lidar_angle (e.g. a full lidar rotation)
-//        layout->registerDim(Dimension::Id::PointSourceId); // which frame id this point is from
-
         layout->registerOrAssignDim("LaserId", Dimension::Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
         layout->registerOrAssignDim("LidarAngle", Dimension::Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
         // todo: need a frame reference id
+//        layout->registerDim(Dimension::Id::PointSourceId); // which frame id this point is from
     }
 
     void AutoXBFReader::ready(PointTableRef)
@@ -71,8 +52,7 @@ Height from the vehicle is physically measured into txt file.
         if (!bConverted)
         {
             std::stringstream oss;
-            oss << "Unable to convert " << name << ", " << s[fieldno] <<
-                ", to double";
+            oss << "Unable to convert " << name << ", " << s[fieldno] << ", to double";
             throw pdal_error(oss.str());
         }
 
@@ -84,20 +64,17 @@ Height from the vehicle is physically measured into txt file.
     {
         PointLayoutPtr layout = view->layout();
         PointId nextId = view->size(); // ID of the point incremented in each iteration of the loop
-        PointId idx = m_index;
-        point_count_t numRead = 0;
+        point_count_t beginId = nextId;
+        log()->get(LogLevel::Info) << "AutoXBFReader m_filename: " << m_filename << std::endl;
 
-        m_stream.reset(new ILeStream(m_filename));
-
-        // this skips lines, we don't have a header so we don't need this
         size_t HEADERSIZE(1);
-        size_t skip_lines((std::max)(HEADERSIZE, (size_t)m_index));
         size_t line_no(1);
 
         // each line thereafter is a single point
-        for (std::string line; std::getline(*m_stream->stream(), line); line_no++)
+        for (std::string line; std::getline(*m_istream, line); line_no++)
         {
-            if (line_no <= skip_lines)
+            log()->get(LogLevel::Debug4) << line_no << ": " << line << std::endl;
+            if (line_no <= HEADERSIZE)
             {
                 continue;
             }
@@ -108,7 +85,7 @@ Height from the vehicle is physically measured into txt file.
 
             unsigned long u64(0);
             // make sure that we have the proper number of fields.
-            if (s.size() != 4)
+            if (s.size() != m_expected_no_fields)
             {
                 std::stringstream oss;
                 oss << "Unable to split proper number of fields.  Expected 4, got "
@@ -117,34 +94,35 @@ Height from the vehicle is physically measured into txt file.
             }
 
             // the values we read and put them into the PointView object
-            std::string name("X");
-            view->setField(Dimension::Id::X, nextId, convert<double>(s, name, 0));
-
-            name = "Y";
-            view->setField(Dimension::Id::Y, nextId, convert<double>(s, name, 1));
-
-            name = "Z";
-            double z = convert<double>(s, name, 2) * m_scale_z;
-            view->setField(Dimension::Id::Z, nextId, z);
-
-            name = "MyData";
-            view->setField(layout->findProprietaryDim(name),
-                           nextId,
-                           convert<unsigned int>(s, name, 3));
+            view->setField(Dimension::Id::X, nextId, convert<double>(s, "X", 0));
+            view->setField(Dimension::Id::Y, nextId, convert<double>(s, "Y", 1));
+            view->setField(Dimension::Id::Z, nextId, convert<double>(s, "Z", 2));
+            view->setField(Dimension::Id::Intensity, nextId, convert<double>(s, "Intensity", 3));
+            view->setField(Dimension::Id::InternalTime, nextId, convert<double>(s, "InternalTime", 4));
+            view->setField(Dimension::Id::GpsTime, nextId, convert<double>(s, "GpsTime", 5));
+            view->setField(layout->findProprietaryDim("LaserId"), nextId, convert<unsigned int>(s, "LaserId", 6));
+            view->setField(layout->findProprietaryDim("LidarAngle"), nextId, convert<unsigned int>(s, "LidarAngle", 7));
 
             nextId++;
             if (m_cb)
                 m_cb(*view, nextId);
         }
-        m_index = nextId;
-        numRead = nextId;
+        m_numPts = nextId - beginId;
 
-        return numRead;
+        return m_numPts;
     }
 
     void AutoXBFReader::done(PointTableRef)
     {
-        m_stream.reset();
+        Utils::closeFile(m_istream);
+    }
+
+    void AutoXBFReader::initialize(BasePointTable &table) {
+        m_numPts = 0;
+        m_istream = Utils::openFile(m_filename, false);
+        if (!m_istream)
+            throwError("Unable to open text file '" + m_filename + "'.");
+
     }
 
 } //namespace pdal
