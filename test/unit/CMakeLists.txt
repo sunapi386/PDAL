@@ -288,8 +288,3 @@ if(PDAL_HAVE_LIBXML2)
             ${LIBXML2_INCLUDE_DIR}
     )
 endif()
-
-if(BUILD_PLUGIN_BF)
-    PDAL_ADD_TEST(pdal_io_bf_reader_test FILES io/BFReaderTest.cpp)
-    PDAL_ADD_TEST(pdal_io_bf_writer_test FILES io/BFWriterTest.cpp)
-endif()
