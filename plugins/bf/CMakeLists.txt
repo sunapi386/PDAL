@@ -4,7 +4,6 @@
 set(CMAKE_CXX_STANDARD 14)
 include(${PDAL_CMAKE_DIR}/bf.cmake)
 
-
 # eigen lib
 find_package(Eigen3 3.3.4 REQUIRED NO_MODULE)
 
@@ -24,7 +23,7 @@ protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS io/vehicle_state.proto)
 # pthreads lib
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-
+message(BF: ${BF})
 #target_link_libraries(reader_bf ${BF} Threads::Threads ${PROTOBUF_LIBRARIES} Eigen3::Eigen GeographicLib)
 
 #
@@ -37,7 +36,10 @@ PDAL_ADD_PLUGIN(reader_libname reader bf
                 ${PROTO_SRCS}
                 LINK_WITH
                 ${BF}
-                Threads::Threads ${PROTOBUF_LIBRARIES} Eigen3::Eigen GeographicLib
+                Threads::Threads
+                ${PROTOBUF_LIBRARIES}
+                Eigen3::Eigen
+                GeographicLib
                 INCLUDES
                 ${PROTO_HDRS}
         )

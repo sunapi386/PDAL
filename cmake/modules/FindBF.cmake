@@ -9,21 +9,21 @@
 ###############################################################################
 MESSAGE(STATUS "Searching for BF")
 
-IF(BF_LIB)
+IF(BF)
   # Already in cache, be silent
   SET(BF_FIND_QUIETLY TRUE)
 ENDIF()
 
-FIND_FILE(BF_LIB
-  libbf.a # todo: once this file is found the .h files are not checked... fix this
-  bf_macros.h
-  bf_datum_parser.h
-  bf_datum_writer.h
-  bf_timespec_utils.h
-  PATHS
-  /usr/local/lib
-  /usr/local/include
-  /usr/local)
+FIND_FILE(BF
+        libbf.a # todo: once this file is found the .h files are not checked... fix this
+        bf_macros.h
+        bf_datum_parser.h
+        bf_datum_writer.h
+        bf_timespec_utils.h
+        PATHS
+        /usr/local/lib
+        /usr/local/include
+        /usr/local)
 
 # Handle the QUIETLY and REQUIRED arguments and set BF_FOUND to TRUE
 # if all listed variables are TRUE

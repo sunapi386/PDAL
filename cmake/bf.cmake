@@ -17,6 +17,8 @@
 find_package(BF REQUIRED)
 if (BF_FOUND)
     include_directories(${BF_INCLUDE_DIR})
+    message("BF found in ${BF_INCLUDE_DIR}")
+
 else ()
     message("BF not found!")
 endif ()

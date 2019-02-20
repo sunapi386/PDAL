@@ -1,4 +1,5 @@
 #include "BFReader.hpp"
+#include "BFCommon.hpp"
 #include <pdal/util/ProgramArgs.hpp>
 
 namespace pdal
@@ -77,16 +78,59 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t count)
     view->setField(layout->findProprietaryDim("LaserId"), nextId, 0);
     view->setField(layout->findProprietaryDim("LidarAngle"), nextId, 1);
 
-    size_t HEADERSIZE(1);
-    size_t line_no(1);
+//    size_t HEADERSIZE(1);
+//    size_t line_no(1);
 
-//    bf::Datum datumRtk {};
-//    uint nRtk = 0;
-//    while (m_datumParserRtk->GetDatum(datumRtk)) {
-//        nRtk++;
-//
-//        free(datumRtk.data);
-//    }
+    std::string filename = "/autox/map/datasets/ABCD_test/vls128_lidar";
+    bf::DatumParser datumParser(filename);
+    bf::Datum datum{};
+    uint counter = 0;
+    auto time_point = std::chrono::system_clock::now();
+    static const int nDatumsToRead = 1;
+
+    while (datumParser.GetDatum(datum)) {
+        // read in the pointcloud
+        auto pointcloud = getLidarPoints(datum);
+        // note the timestamp is not recorded in the datum itself
+        // and the lidar_angle is not used
+        // there are about 200k points in a single scan (for 128 beam lidar)
+
+        // x,y,z are in meters
+        free(datum.data);
+
+        timespec &timespec = datum.time; // todo: interpolate on time for
+        std::string timespecToString = "lidar_" + TimespecToString(timespec) + ".csv";
+        writePCTextFile(pointcloud, timespecToString);
+        //    points
+
+        // transform lidar frame to global reference
+        //    auto pcInVehicleReference =
+        //        transformReferenceFromLidarToVehicle(pointcloud);
+        //    savePC(pcInVehicleReference);
+
+        //    auto pcInGlobalFrame =
+        //        transformReferenceFromVehicleToGlobalApproximate(pcInVehicleReference);
+        //    savePC(pcInGlobalFrame);
+
+        // counting frames
+//        if (counter % 100 == 0) {
+//            std::cout << counter << ":\n";
+////            printLidarPC(pointcloud);
+//            std::cout << "\n";
+//        }
+        if (counter >= nDatumsToRead - 1) {
+            break;
+        }
+        ++counter;
+    }
+
+//    auto time_point_2 = std::chrono::system_clock::now();
+//    std::cout << counter << "\n";
+//    auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
+//        time_point_2 - time_point);
+//    std::cout << delta.count() << "ms"
+//              << "\n";
+
 
     // each line thereafter is a single point
 /*
