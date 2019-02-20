@@ -1,0 +1,188 @@
+syntax = "proto2";
+
+package msg;
+
+enum GpsQuality {
+  FIX_NO = 0;
+  FIX_2D = 1;
+  FIX_3D = 2;
+  FIX_INVALID = 3;
+}
+
+enum SensorStatus {
+  Healthy = 0;
+  Unknown = 1;
+  Blocked = 2;
+}
+
+enum CartDecisionState {
+  OFFLINE = 0;
+  UNKNOWN = 1;
+  UNSTRUCTURED = 2;
+  AUTO_DRIVING = 3;
+  AUTO_DRIVING_PAUSED = 4;
+  HYBRID = 5;
+  ROUTE_SELECTION = 6;
+  SELF_RECOVERY = 7;
+  STANDBY = 8;
+  MANUAL = 9;
+  BOOTUP = 10;
+}
+
+message AllSensorStatus{
+  optional SensorStatus lidar3d_status = 1;
+}
+
+message VehicleState {
+  optional GpsMessage gps_message = 1;
+  optional ImuMessage imu_message = 2;
+  optional VehicleInfoMessage vehicle_info_message = 3;
+  optional Pose3DMessage pose3d_message = 4;
+  optional Pose2DMessage pose2d_message = 5;
+  optional RTKMessage rtk_message = 6;
+
+}
+message GpsMessage {
+  optional double latitude = 1;
+  optional double longitude = 2;
+  optional bool gps_valid = 3;
+
+  optional int32 year = 4;
+  optional int32 month = 5;
+  optional int32 day = 6;
+  optional int32 hours = 7;
+  optional int32 minutes = 8;
+  optional int32 seconds = 9;
+  optional double compass_direction = 10;
+  optional double pdop = 11;
+  optional bool is_gps_fault = 12;
+  optional bool is_inferred = 13;
+  optional double altitude = 14;
+  optional double heading = 15;
+  // Horizontal Dilution of Precision
+  optional double hdop = 16;
+  optional double vdop = 17;
+  optional GpsQuality quality = 18;
+  optional int32 num_satellites = 19;
+  optional double gps_speed = 20;
+  optional double speed_accuracy = 21;
+  optional double heading_accuracy = 22;
+}
+
+message VecXYZ {
+  optional double x = 1;
+  optional double y = 2;
+  optional double z = 3;
+}
+
+message VecENU {
+  optional double north = 1;
+  optional double east = 2;
+  optional double up = 3;
+}
+
+enum RTKMode {
+  MODE_DIFFERENTIAL = 0;
+  MODE_DIFFERENTIAL_PP = 1;
+  MODE_RTK_FLOAT = 2;
+  MODE_RTK_INTEGER = 3;
+  MODE_RTK_FLOAT_PP = 4;
+  MODE_RTK_INTEGER_PP = 5;
+  MODE_DOPPLER_PP = 6;
+  MODE_SPS_PP = 7;
+  MODE_OMNISTAR_VBS = 8;
+  MODE_OMNISTAR_HP = 9;
+  MODE_OMNISTAR_XP = 10;
+  MODE_WAAS = 11;
+  MODE_CDGPS = 12;
+  MODE_SPS = 13;
+  MODE_NONE = 14;
+  MODE_SEARCH = 15;
+  MODE_DOPPLER = 16;
+  MODE_NO_DATA = 17;
+  MODE_BLANKED = 18;
+  MODE_NOT_RECOGNISED = 19;
+  MODE_GX_DOPPLER = 20;
+  MODE_GX_SPS = 21;
+  MODE_GX_DIFFERENTIAL = 22;
+  MODE_GX_FLOAT = 23;
+  MODE_GX_INTEGER = 24;
+  MODE_IX_DOPPLER = 25;
+  MODE_IX_SPS = 26;
+  MODE_IX_DIFFERENTIAL = 27;
+  MODE_IX_FLOAT = 28;
+  MODE_IX_INTEGER = 29;
+  MODE_PPP_CONVERGING = 30;
+  MODE_PPP = 31;
+  MODE_UNKNOWN = 32;
+}
+message RTKMessage {
+  optional RTKMode mode = 1;
+  optional double latitude = 2;
+  optional double longitude = 3;
+  optional double altitude = 4;
+  optional VecENU position_covariance = 5;
+  optional double heading = 6;
+  optional double pitch = 7;
+  optional double roll = 8;
+  optional VecENU orientation_covariance = 9;
+  optional VecENU velocity = 10;
+  optional VecENU velocity_covariance = 11;
+  optional VecXYZ linear_acceleration = 12;
+  optional VecXYZ linear_acceleration_covariance = 13;
+  optional VecXYZ angular_velocity = 14;
+  optional VecXYZ angular_velocity_covariance = 15;
+
+  optional int32 num_satellites = 16;
+  optional double delay_ms = 17;
+  optional int32 heading_quality = 18;
+  optional double heading_misalignment_angle = 19;
+  optional double heading_misalignment_accuracy = 20;
+  optional double hdop = 21;
+  optional double pdop = 22;
+}
+
+message ImuMessage {
+  optional double accel_lat = 1;
+  optional double accel_lon = 2;
+  optional double accel_vert = 3;
+  optional double roll_rate = 4;
+  optional double yaw_rate = 5;
+}
+
+message VehicleInfoMessage {
+  optional double yaw_rate = 1;            // rad/s, commanded
+  optional double open_loop_yaw_rate = 2;  // rad/s
+  optional int32 control_method = 3;       // 0 = lane, 1 = waypoint
+  optional double odometry_x = 4 [default = 0];
+  optional double odometry_y = 5 [default = 0];
+  optional double odometry_theta = 6 [default = 0];
+  optional double latitude = 7 [default = -1];
+  optional double longitude = 8 [default = -1];
+  optional bool sonar_enabled = 9;
+  optional int32 sonars_num = 10 [default = 12];  // 0 = lane, 1 = waypoint
+  repeated double sonars = 11;
+  optional int32 button_num = 12 [default = 10];  // 0 = lane, 1 = waypoint
+  repeated bool button_pressed = 13;              // 0 = CONTINUE, 1 = Left TS, 2 = Right TS
+  optional double steering_wheel_angle = 14;      // rad, measured
+  optional double steering_wheel_angle_cmd = 15;  // rad
+  optional double steering_wheel_torque = 16;     // Nm,
+  optional bool is_autonomous = 17;
+  optional int32 last_cancel_type = 18;
+  optional double speed_mps = 19;
+}
+message Pose3DMessage {
+  optional double x = 1;
+  optional double y = 2;
+  optional double z = 3;
+  // Below is quaternion represent for rotation matrix
+  optional double qw = 4;
+  optional double qx = 5;
+  optional double qy = 6;
+  optional double qz = 7;
+}
+message Pose2DMessage {
+  optional double x = 1;
+  optional double y = 2;
+  optional double theta = 3;
+}

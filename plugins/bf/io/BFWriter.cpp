@@ -8,8 +8,8 @@ namespace pdal
 {
 static PluginInfo const s_info
 {
-    "writers.mywriter",
-    "My Awesome Writer",
+    "writers.bf",
+    "My Awesome BF Writer",
     "http://path/to/documentation"
 };
 

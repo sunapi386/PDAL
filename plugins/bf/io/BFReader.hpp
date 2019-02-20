@@ -37,7 +37,7 @@ private:
     BFArgs m_args;
     point_count_t m_numPts;
     uint8_t m_expected_no_fields = 8;
-    std::unique_ptr<bf::DatumParser> m_datumParserRtk;
+//    std::unique_ptr<bf::DatumParser> m_datumParserRtk;
 //    bf::DatumParser m_datumParserLidar;
 //    std::istream m_istreamTransf;
 

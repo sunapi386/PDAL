@@ -3,12 +3,11 @@
 
 namespace pdal
 {
-static StaticPluginInfo const s_info
+static PluginInfo const s_info
 {
     "readers.bf",
     "BF Reader",
-    "https://example.com",
-    { "bf" }
+    "http://path/to/documentation"
 };
 
 CREATE_SHARED_STAGE(BFReader, s_info)
@@ -69,16 +68,25 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t count)
     point_count_t beginId = nextId;
     log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
 
+    view->setField(Dimension::Id::X, nextId, 1);
+    view->setField(Dimension::Id::Y, nextId, 3);
+    view->setField(Dimension::Id::Z, nextId, 3);
+    view->setField(Dimension::Id::Intensity, nextId, 7);
+    view->setField(Dimension::Id::InternalTime, nextId, 0);
+    view->setField(Dimension::Id::GpsTime, nextId, 0);
+    view->setField(layout->findProprietaryDim("LaserId"), nextId, 0);
+    view->setField(layout->findProprietaryDim("LidarAngle"), nextId, 1);
+
     size_t HEADERSIZE(1);
     size_t line_no(1);
 
-    bf::Datum datumRtk {};
-    uint nRtk = 0;
-    while (m_datumParserRtk->GetDatum(datumRtk)) {
-        nRtk++;
-
-        free(datumRtk.data);
-    }
+//    bf::Datum datumRtk {};
+//    uint nRtk = 0;
+//    while (m_datumParserRtk->GetDatum(datumRtk)) {
+//        nRtk++;
+//
+//        free(datumRtk.data);
+//    }
 
     // each line thereafter is a single point
 /*
@@ -133,10 +141,12 @@ void BFReader::initialize(BasePointTable &table)
 {
     m_numPts = 0;
 
-    if (!m_args.fileRtk.empty())
-    {
-        m_datumParserRtk = std::unique_ptr<bf::DatumParser>(new bf::DatumParser(m_args.fileRtk));
-    }
+//    if (m_args.fileRtk.empty())
+//    {
+//      throwError("Unable to open rtk file '" + m_args.fileRtk + "'.");
+//    } else {
+//        m_datumParserRtk = std::unique_ptr<bf::DatumParser>(new bf::DatumParser(m_args.fileRtk));
+//    }
 
 
 //    if (!m_args.fileLidar.empty())
