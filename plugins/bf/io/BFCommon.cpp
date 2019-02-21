@@ -17,6 +17,11 @@ std::string TimespecToString(const timespec &timestamp) {
   return sstream.str();
 }
 
+double TimespecToDouble(const timespec& timestamp) {
+  return static_cast<double>(timestamp.tv_sec) +
+         static_cast<double>(timestamp.tv_nsec) / 1e9;
+}
+
 timespec DoubleToTimespec(const double double_time) {
   timespec timespec_time;
   timespec_time.tv_sec = static_cast<time_t>(double_time);

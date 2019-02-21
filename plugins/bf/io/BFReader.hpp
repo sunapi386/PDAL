@@ -35,8 +35,7 @@ public:
 
 private:
     BFArgs m_args;
-    point_count_t m_numPts;
-    uint8_t m_expected_no_fields = 8;
+//    point_count_t m_numPts;
 //    std::unique_ptr<bf::DatumParser> m_datumParserRtk;
 //    bf::DatumParser m_datumParserLidar;
 //    std::istream m_istreamTransf;
@@ -45,7 +44,7 @@ private:
     void addDimensions(PointLayoutPtr layout) override;
     void addArgs(ProgramArgs& args) override;
     void ready(PointTableRef table) override;
-    point_count_t read(PointViewPtr view, point_count_t count) override;
+    point_count_t read(PointViewPtr view, point_count_t nPtsToRead) override;
     void done(PointTableRef table) override;
 };
 }

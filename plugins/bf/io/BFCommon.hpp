@@ -36,9 +36,9 @@ struct LidarPoint {
 };
 
 typedef std::vector<LidarPoint> PointCloud;
-
 PointCloud getLidarPoints(bf::Datum &datum);
 std::string TimespecToString(const timespec &timestamp);
+double TimespecToDouble(const timespec& timestamp);
 timespec DoubleToTimespec(const double double_time);
 //void printLidarPC(PointCloud &pc);
 void writePCTextFile(PointCloud &pc, std::string &name);

@@ -29,15 +29,14 @@ void BFReader::addArgs(ProgramArgs& args)
 void BFReader::addDimensions(PointLayoutPtr layout)
 {
     layout->registerDim(Dimension::Id::X); // lat,lng
-    layout->registerDim(Dimension::Id::Y);
+    layout->registerDim(Dimension::Id::Y); // x,y,z are in meters
     layout->registerDim(Dimension::Id::Z);
     layout->registerDim(Dimension::Id::Intensity);
     layout->registerDim(Dimension::Id::InternalTime); // timestamp
     layout->registerDim(Dimension::Id::GpsTime);      // from rtk
     layout->registerOrAssignDim("LaserId", Dimension::Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
     layout->registerOrAssignDim("LidarAngle", Dimension::Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
-    // todo: need a frame reference id
-//        layout->registerDim(Dimension::Id::PointSourceId); // which frame id this point is from
+    layout->registerDim(Dimension::Id::PointSourceId); // which frame id this point is from
 }
 
 void BFReader::ready(PointTableRef)
@@ -46,62 +45,36 @@ void BFReader::ready(PointTableRef)
     setSpatialReference(ref);
 }
 
-template <typename T>
-T convert(const StringList& s, const std::string& name, size_t fieldno)
-{
-    T output;
-    bool bConverted = Utils::fromString(s[fieldno], output);
-    if (!bConverted)
-    {
-        std::stringstream oss;
-        oss << "Unable to convert " << name << ", " << s[fieldno] << ", to double";
-        throw pdal_error(oss.str());
-    }
 
-    return output;
-}
-
-
-point_count_t BFReader::read(PointViewPtr view, point_count_t count)
+point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 {
     PointLayoutPtr layout = view->layout();
     PointId nextId = view->size(); // ID of the point incremented in each iteration of the loop
-    point_count_t beginId = nextId;
     log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
-
-    view->setField(Dimension::Id::X, nextId, 1);
-    view->setField(Dimension::Id::Y, nextId, 3);
-    view->setField(Dimension::Id::Z, nextId, 3);
-    view->setField(Dimension::Id::Intensity, nextId, 7);
-    view->setField(Dimension::Id::InternalTime, nextId, 0);
-    view->setField(Dimension::Id::GpsTime, nextId, 0);
-    view->setField(layout->findProprietaryDim("LaserId"), nextId, 0);
-    view->setField(layout->findProprietaryDim("LidarAngle"), nextId, 1);
-
-//    size_t HEADERSIZE(1);
-//    size_t line_no(1);
 
     std::string filename = "/autox/map/datasets/ABCD_test/vls128_lidar";
     bf::DatumParser datumParser(filename);
     bf::Datum datum{};
-    uint counter = 0;
-    auto time_point = std::chrono::system_clock::now();
-    static const int nDatumsToRead = 1;
 
-    while (datumParser.GetDatum(datum)) {
-        // read in the pointcloud
-        auto pointcloud = getLidarPoints(datum);
+    point_count_t nPtsRead = 0;
+    uint nFramesRead = 0;
+    uint nFramesToRead = 1;
+
+    auto time_point = std::chrono::system_clock::now();
+
+    while (nPtsRead < nPtsToRead && nFramesRead++ < nFramesToRead && datumParser.GetDatum(datum))
+    {
+        auto pointCloud = getLidarPoints(datum);
         // note the timestamp is not recorded in the datum itself
         // and the lidar_angle is not used
         // there are about 200k points in a single scan (for 128 beam lidar)
 
-        // x,y,z are in meters
+        log()->get(LogLevel::Debug) << "Datum " << nFramesRead << " size: " << unsigned(datum.size) << " Bytes\n";
         free(datum.data);
 
         timespec &timespec = datum.time; // todo: interpolate on time for
-        std::string timespecToString = "lidar_" + TimespecToString(timespec) + ".csv";
-        writePCTextFile(pointcloud, timespecToString);
-        //    points
+//        std::string timespecToString = "lidar_" + TimespecToString(timespec) + ".csv";
+//        writePCTextFile(pointCloud, timespecToString);
 
         // transform lidar frame to global reference
         //    auto pcInVehicleReference =
@@ -112,78 +85,43 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t count)
         //        transformReferenceFromVehicleToGlobalApproximate(pcInVehicleReference);
         //    savePC(pcInGlobalFrame);
 
-        // counting frames
-//        if (counter % 100 == 0) {
-//            std::cout << counter << ":\n";
-////            printLidarPC(pointcloud);
-//            std::cout << "\n";
-//        }
-        if (counter >= nDatumsToRead - 1) {
-            break;
-        }
-        ++counter;
-    }
-
-//    auto time_point_2 = std::chrono::system_clock::now();
-//    std::cout << counter << "\n";
-//    auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
-//        time_point_2 - time_point);
-//    std::cout << delta.count() << "ms"
-//              << "\n";
-
-
-    // each line thereafter is a single point
-/*
-    for (std::string line; std::getline(*m_istreamTransf, line); line_no++)
-    {
-        log()->get(LogLevel::Debug4) << line_no << ": " << line << std::endl;
-        if (line_no <= HEADERSIZE)
-        {
-            continue;
-        }
-
-        // BFReader format:  X::Y::Z::Data
-        // Here we take the line we read in the for block header, split it, and
-        StringList s = Utils::split2(line, ':');
-
-        unsigned long u64(0);
-        // make sure that we have the proper number of fields.
-        if (s.size() != m_expected_no_fields)
-        {
-            std::stringstream oss;
-            oss << "Unable to split proper number of fields.  Expected 4, got "
-                << s.size();
-            throw pdal_error(oss.str());
-        }
 
         // the values we read and put them into the PointView object
-        view->setField(Dimension::Id::X, nextId, convert<double>(s, "X", 0));
-        view->setField(Dimension::Id::Y, nextId, convert<double>(s, "Y", 1));
-        view->setField(Dimension::Id::Z, nextId, convert<double>(s, "Z", 2));
-        view->setField(Dimension::Id::Intensity, nextId, convert<double>(s, "Intensity", 3));
-        view->setField(Dimension::Id::InternalTime, nextId, convert<double>(s, "InternalTime", 4));
-        view->setField(Dimension::Id::GpsTime, nextId, convert<double>(s, "GpsTime", 5));
-        view->setField(layout->findProprietaryDim("LaserId"), nextId, convert<unsigned int>(s, "LaserId", 6));
-        view->setField(layout->findProprietaryDim("LidarAngle"), nextId, convert<unsigned int>(s, "LidarAngle", 7));
+        for (auto &pt : pointCloud)
+        {
+            view->setField(Dimension::Id::X, nextId, pt.x);
+            view->setField(Dimension::Id::Y, nextId, pt.y);
+            view->setField(Dimension::Id::Z, nextId, pt.z);
+            view->setField(Dimension::Id::Intensity, nextId, pt.intensity);
+            view->setField(Dimension::Id::InternalTime, nextId, TimespecToDouble(timespec));
+            view->setField(Dimension::Id::GpsTime, nextId, TimespecToDouble(timespec));
+            view->setField(layout->findProprietaryDim("LaserId"), nextId, pt.laser_id);
+            view->setField(layout->findProprietaryDim("LidarAngle"), nextId, pt.lidar_angle);
+            view->setField(Dimension::Id::PointSourceId, nextId, nFramesRead);
+            ++nPtsRead;
+            ++nextId;
+        }
 
-        nextId++;
         if (m_cb)
+        {
             m_cb(*view, nextId);
+        }
     }
-*/
-    m_numPts = nextId - beginId;
 
-    return m_numPts;
+    auto time_point_2 = std::chrono::system_clock::now();
+    log()->get(LogLevel::Info) << nPtsRead << "\n";
+    auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(time_point_2 - time_point);
+    log()->get(LogLevel::Info) << delta.count() << "ms" << "\n";
+
+    return nPtsRead;
 }
 
 void BFReader::done(PointTableRef)
 {
-//    Utils::closeFile(m_istreamTransf);
 }
 
 void BFReader::initialize(BasePointTable &table)
 {
-    m_numPts = 0;
 
 //    if (m_args.fileRtk.empty())
 //    {
