@@ -28,15 +28,16 @@ void BFReader::addArgs(ProgramArgs& args)
 // corresponds to bf::msg::LidarPoint
 void BFReader::addDimensions(PointLayoutPtr layout)
 {
-    layout->registerDim(Dimension::Id::X); // lat,lng
-    layout->registerDim(Dimension::Id::Y); // x,y,z are in meters
-    layout->registerDim(Dimension::Id::Z);
-    layout->registerDim(Dimension::Id::Intensity);
-    layout->registerDim(Dimension::Id::InternalTime); // timestamp
-    layout->registerDim(Dimension::Id::GpsTime);      // from rtk
-    layout->registerOrAssignDim("LaserId", Dimension::Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
-    layout->registerOrAssignDim("LidarAngle", Dimension::Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
-    layout->registerDim(Dimension::Id::PointSourceId); // which frame id this point is from
+    using namespace Dimension;
+    layout->registerDim(Id::X); // lat,lng
+    layout->registerDim(Id::Y); // x,y,z are in meters
+    layout->registerDim(Id::Z);
+    layout->registerDim(Id::Intensity);
+    layout->registerDim(Id::InternalTime); // timestamp
+    layout->registerDim(Id::GpsTime);      // from rtk
+    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
+    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
+    layout->registerDim(Id::PointSourceId); // which frame id this point is from
 }
 
 void BFReader::ready(PointTableRef)
@@ -48,8 +49,15 @@ void BFReader::ready(PointTableRef)
 
 point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 {
+    // Note that we don’t read more points than requested
+    // 18446744073709551615 is 2^64-1
+    log()->get(LogLevel::Info) << "Requested " << nPtsToRead << " points to be read\n";
+
     PointLayoutPtr layout = view->layout();
-    PointId nextId = view->size(); // ID of the point incremented in each iteration of the loop
+
+    // Determine the ID of the next point in the point view
+    PointId nextId = view->size();
+
     log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
 
     std::string filename = "/autox/map/datasets/ABCD_test/vls128_lidar";
@@ -57,19 +65,19 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     bf::Datum datum{};
 
     point_count_t nPtsRead = 0;
-    uint nFramesRead = 0;
+    uint nBFFramesRead = 0;
     uint nFramesToRead = 1;
 
     auto time_point = std::chrono::system_clock::now();
 
-    while (nPtsRead < nPtsToRead && nFramesRead++ < nFramesToRead && datumParser.GetDatum(datum))
+    while (nPtsRead < nPtsToRead && nBFFramesRead < nFramesToRead && datumParser.GetDatum(datum))
     {
         auto pointCloud = getLidarPoints(datum);
         // note the timestamp is not recorded in the datum itself
         // and the lidar_angle is not used
         // there are about 200k points in a single scan (for 128 beam lidar)
 
-        log()->get(LogLevel::Debug) << "Datum " << nFramesRead << " size: " << unsigned(datum.size) << " Bytes\n";
+        log()->get(LogLevel::Debug) << "Datum " << nBFFramesRead << " size: " << unsigned(datum.size) << " Bytes\n";
         free(datum.data);
 
         timespec &timespec = datum.time; // todo: interpolate on time for
@@ -95,12 +103,17 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             view->setField(Dimension::Id::Intensity, nextId, pt.intensity);
             view->setField(Dimension::Id::InternalTime, nextId, TimespecToDouble(timespec));
             view->setField(Dimension::Id::GpsTime, nextId, TimespecToDouble(timespec));
-            view->setField(layout->findProprietaryDim("LaserId"), nextId, pt.laser_id);
-            view->setField(layout->findProprietaryDim("LidarAngle"), nextId, pt.lidar_angle);
-            view->setField(Dimension::Id::PointSourceId, nextId, nFramesRead);
-            ++nPtsRead;
-            ++nextId;
+            view->setField(m_LaserId, nextId, pt.laser_id);
+            view->setField(m_LidarAngle, nextId, pt.lidar_angle);
+            view->setField(Dimension::Id::PointSourceId, nextId, nBFFramesRead);
+
+            /*processOne(point);*/ // todo: add streaming
+
+            nPtsRead++;
+            nextId++;
+
         }
+        nBFFramesRead++;
 
         if (m_cb)
         {
@@ -116,31 +129,34 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     return nPtsRead;
 }
 
+
+/*
+
+bool BFReader::processOne(PointRef &point)
+{
+    // todo: add streaming option
+    using namespace Dimension;
+    point.setField(Id::X, pt.x);
+    point.setField(Id::Y, pt.y);
+    point.setField(Id::Z, pt.z);
+    point.setField(Id::Intensity, pt.intensity);
+    point.setField(Id::InternalTime, TimespecToDouble(timespec));
+    point.setField(Id::GpsTime, TimespecToDouble(timespec));
+    point.setField(m_LaserId, pt.laser_id);
+    point.setField(m_LidarAngle, pt.lidar_angle);
+    point.setField(Id::PointSourceId, nFramesRead);
+    return true;
+}
+*/
+
+
 void BFReader::done(PointTableRef)
 {
 }
 
-void BFReader::initialize(BasePointTable &table)
+
+void BFReader::initialize()
 {
-
-//    if (m_args.fileRtk.empty())
-//    {
-//      throwError("Unable to open rtk file '" + m_args.fileRtk + "'.");
-//    } else {
-//        m_datumParserRtk = std::unique_ptr<bf::DatumParser>(new bf::DatumParser(m_args.fileRtk));
-//    }
-
-
-//    if (!m_args.fileLidar.empty())
-//    {
-//        m_datumParserLidar = bf::DatumParser(m_args.fileLidar);
-//    }
-//    if (!m_args.fileTransf.empty())
-//    {
-//        m_istreamTransf = Utils::openFile(m_filename, false);
-//    if (!m_istreamTransf)
-//      throwError("Unable to open text file '" + m_filename + "'.");
-//    }
 
 }
 

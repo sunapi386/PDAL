@@ -27,24 +27,29 @@ Height from the vehicle is physically measured into txt file.
 
 namespace pdal
 {
-class PDAL_DLL BFReader : public Reader
+class PDAL_DLL BFReader : public Reader/*, public Streamable*/
 {
 public:
     BFReader() : Reader() {};
     std::string getName() const override;
 
 private:
+    Dimension::Id m_LaserId, m_LidarAngle;
     BFArgs m_args;
-//    point_count_t m_numPts;
+    point_count_t m_nPtsAlreadyRead;
 //    std::unique_ptr<bf::DatumParser> m_datumParserRtk;
 //    bf::DatumParser m_datumParserLidar;
 //    std::istream m_istreamTransf;
 
-    void initialize(PointTableRef table) override;
-    void addDimensions(PointLayoutPtr layout) override;
     void addArgs(ProgramArgs& args) override;
-    void ready(PointTableRef table) override;
+    void initialize() override; // open files
+    void addDimensions(PointLayoutPtr layout) override;
+
+    void ready(PointTableRef table) override; // reset input data to read first point
+
     point_count_t read(PointViewPtr view, point_count_t nPtsToRead) override;
-    void done(PointTableRef table) override;
+    /*bool processOne(PointRef& point);*/
+
+    void done(PointTableRef table) override; // close files or reset state initialized in ready()
 };
 }
