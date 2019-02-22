@@ -1,7 +1,6 @@
 #
 # BF driver CMake configuration
 #
-set(CMAKE_CXX_STANDARD 14)
 include(${PDAL_CMAKE_DIR}/bf.cmake)
 
 # eigen lib

@@ -3,6 +3,8 @@
 #include <pdal/PointView.hpp>
 #include <pdal/Reader.hpp>
 #include <pdal/util/IStream.hpp>
+#include <json/value.h>
+#include <vendor/eigen/Eigen/Dense>
 #include "bf_datum_parser.h"
 #include "BFCommon.hpp"
 
@@ -27,6 +29,7 @@ Height from the vehicle is physically measured into txt file.
 
 namespace pdal
 {
+
 class PDAL_DLL BFReader : public Reader/*, public Streamable*/
 {
 public:
@@ -37,11 +40,12 @@ private:
     Dimension::Id m_LaserId, m_LidarAngle;
     BFArgs m_args;
     point_count_t m_nPtsAlreadyRead;
-//    std::unique_ptr<bf::DatumParser> m_datumParserRtk;
-//    bf::DatumParser m_datumParserLidar;
-//    std::istream m_istreamTransf;
+    std::unique_ptr<bf::DatumParser> m_datumParserRtk, m_datumParserLidar;
+    Eigen::Affine3d m_affine;
 
-    void addArgs(ProgramArgs& args) override;
+
+    void addArgs(ProgramArgs &args) override;
+
     void initialize() override; // open files
     void addDimensions(PointLayoutPtr layout) override;
 
@@ -51,5 +55,9 @@ private:
     /*bool processOne(PointRef& point);*/
 
     void done(PointTableRef table) override; // close files or reset state initialized in ready()
+
+    void openInputFiles();
+
+
 };
 }

@@ -1,13 +1,16 @@
 #include "BFReader.hpp"
 #include "BFCommon.hpp"
+#include <memory>
 #include <pdal/util/ProgramArgs.hpp>
+#include <pdal/util/FileUtils.hpp>
+#include <vendor/jsoncpp/dist/json/json.h>
 
 namespace pdal
 {
 static PluginInfo const s_info
 {
     "readers.bf",
-    "BF Reader",
+    "BF Reader (input file should be set to the JSON input)",
     "http://path/to/documentation"
 };
 
@@ -20,9 +23,35 @@ std::string BFReader::getName() const
 
 void BFReader::addArgs(ProgramArgs& args)
 {
-    args.add("rtk,r", "Path to BF RTK file", m_args.fileRtk);
-    args.add("lidar,l", "Path to BF lidar file", m_args.fileLidar);
-    args.add("trans,t", "Path to intrinsic/extrinsic lidar/cam transform file", m_args.fileTransf);
+    args.add("rtk", "BF file, RTK", m_args.fileRtk);
+    args.add("lidar", "BF file, lidar", m_args.fileLidar);
+    args.add("affine", "Text file, spatial transformation affine", m_args.fileAffine);
+}
+
+void BFReader::initialize()
+{
+    // load arguments from json file when provided, but manual args takes precedence
+    if (!m_filename.empty())
+    {
+        Json::Value parsedJson;
+        bool success = jsonValueFromFile(m_filename, parsedJson);
+        if (!success)
+        {
+            throwError("Failed to parse JSON file " + m_filename);
+        }
+        m_args = readArgsFromJson(parsedJson);
+        openInputFiles();
+    }
+    else
+    {
+        throwError("Did not get an input filename");
+    }
+}
+
+void BFReader::
+done(PointTableRef)
+{
+    log()->get(LogLevel::Info) << "Done\n";
 }
 
 // corresponds to bf::msg::LidarPoint
@@ -60,8 +89,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
     log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
 
-    std::string filename = "/autox/map/datasets/ABCD_test/vls128_lidar";
-    bf::DatumParser datumParser(filename);
+    bf::DatumParser datumParser(m_args.fileLidar);
     bf::Datum datum{};
 
     point_count_t nPtsRead = 0;
@@ -130,6 +158,40 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 }
 
 
+
+
+void BFReader::openInputFiles()
+{
+    std::__cxx11::string missingFiles;
+    if (!Utils::fileExists(m_args.fileRtk))
+    {
+        missingFiles += "\n-rtk=" + m_args.fileRtk + " ";
+    }
+    if (!Utils::fileExists(m_args.fileLidar))
+    {
+        missingFiles += "\n-lidar=" + m_args.fileLidar + " ";
+    }
+    if (!Utils::fileExists(m_args.fileAffine))
+    {
+        missingFiles += "\n-affine=" + m_args.fileAffine + " ";
+    }
+    if (!missingFiles.empty())
+    {
+        throwError("The specified files in " + m_filename + " were not found:" + missingFiles);
+    }
+    log()->get(LogLevel::Info) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar=" << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
+    m_datumParserLidar = make_unique<bf::DatumParser>(m_args.fileLidar);
+    m_datumParserRtk = make_unique<bf::DatumParser>(m_args.fileRtk);
+    Json::Value value;
+    bool success = jsonValueFromFile(m_args.fileAffine,value);
+    if (!success)
+    {
+        throwError("Failed to parse json file " + m_args.fileAffine);
+    }
+    m_affine = readAffineFromJson(value);
+}
+
+
 /*
 
 bool BFReader::processOne(PointRef &point)
@@ -149,15 +211,5 @@ bool BFReader::processOne(PointRef &point)
 }
 */
 
-
-void BFReader::done(PointTableRef)
-{
-}
-
-
-void BFReader::initialize()
-{
-
-}
 
 } //namespace pdal
