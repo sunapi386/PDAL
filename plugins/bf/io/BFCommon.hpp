@@ -10,12 +10,14 @@
 #include <vendor/eigen/Eigen/Dense>
 #include <json/value.h>
 #include <json/json.h>
+#include <vehicle_state.pb.h>
 
 struct BFArgs
 {
     std::string fileRtk;
     std::string fileLidar;
     std::string fileAffine;
+    bool dumpFrames;
 };
 
 template<typename T, typename... Args>
@@ -37,7 +39,7 @@ struct LidarPoint
 
 typedef std::vector<LidarPoint> PointCloud;
 PointCloud getLidarPoints(bf::Datum &datum);
-std::string TimespecToString(const timespec &timestamp);
+std::string TimespecToString(const timespec &timestamp, bool useDash = false);
 double TimespecToDouble(const timespec& timestamp);
 timespec DoubleToTimespec(const double double_time);
 //void printLidarPC(PointCloud &pc);

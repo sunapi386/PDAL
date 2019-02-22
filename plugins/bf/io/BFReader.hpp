@@ -40,7 +40,14 @@ private:
     Dimension::Id m_LaserId, m_LidarAngle;
     BFArgs m_args;
     point_count_t m_nPtsAlreadyRead;
-    std::unique_ptr<bf::DatumParser> m_datumParserRtk, m_datumParserLidar;
+
+    // the lidar BF file is usually large, 10-100Gb
+    std::unique_ptr<bf::DatumParser> m_datumParserLidar;
+
+    // this rtk datum file is usually small, 1-100 Mbs so we can store it in memory
+    std::vector<msg::RTKMessage> m_rtkMsgs;
+
+    // the affine is small
     Eigen::Affine3d m_affine;
 
 
@@ -57,7 +64,7 @@ private:
     void done(PointTableRef table) override; // close files or reset state initialized in ready()
 
     void openInputFiles();
-
+    std::vector<msg::RTKMessage> convertDatumsToRTKMessage(std::vector<bf::Datum> &datums);
 
 };
 }

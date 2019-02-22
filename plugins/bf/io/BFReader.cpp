@@ -26,6 +26,7 @@ void BFReader::addArgs(ProgramArgs& args)
     args.add("rtk", "BF file, RTK", m_args.fileRtk);
     args.add("lidar", "BF file, lidar", m_args.fileLidar);
     args.add("affine", "Text file, spatial transformation affine", m_args.fileAffine);
+    args.add("dumpFrames", "Bool flag to dump lidar csv", m_args.dumpFrames);
 }
 
 void BFReader::initialize()
@@ -89,8 +90,9 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
     log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
 
-    bf::DatumParser datumParser(m_args.fileLidar);
-    bf::Datum datum{};
+    bf::DatumParser datumParserLidar(m_args.fileLidar);
+    bf::Datum datumLidar{};
+
 
     point_count_t nPtsRead = 0;
     uint nBFFramesRead = 0;
@@ -98,19 +100,31 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
     auto time_point = std::chrono::system_clock::now();
 
-    while (nPtsRead < nPtsToRead && nBFFramesRead < nFramesToRead && datumParser.GetDatum(datum))
+    // lidar datum and rtk datum are in separate BF files
+    // when we read a lidar datum, also read in a rtk datum
+    // this of course assumes the capture frequency are same
+    // i.e. both captured at 10Hz.
+
+    while (nPtsRead < nPtsToRead && nBFFramesRead < nFramesToRead && datumParserLidar.GetDatum(datumLidar))
     {
-        auto pointCloud = getLidarPoints(datum);
+
+        auto pointCloud = getLidarPoints(datumLidar);
         // note the timestamp is not recorded in the datum itself
         // and the lidar_angle is not used
         // there are about 200k points in a single scan (for 128 beam lidar)
 
-        log()->get(LogLevel::Debug) << "Datum " << nBFFramesRead << " size: " << unsigned(datum.size) << " Bytes\n";
-        free(datum.data);
+        log()->get(LogLevel::Debug) << "Datum " << nBFFramesRead << " size: " << unsigned(datumLidar.size) << " Bytes\n";
 
-        timespec &timespec = datum.time; // todo: interpolate on time for
-//        std::string timespecToString = "lidar_" + TimespecToString(timespec) + ".csv";
-//        writePCTextFile(pointCloud, timespecToString);
+        free(datumLidar.data);
+
+        timespec &timespec = datumLidar.time; // todo: interpolate on time for
+        if (m_args.dumpFrames)
+        {
+            std::string timespecString = TimespecToString(timespec, true);
+//            std::string rtkString =
+            std::string name = "lidar_" + timespecString + "_" + ".csv";
+            writePCTextFile(pointCloud, name);
+        }
 
         // transform lidar frame to global reference
         //    auto pcInVehicleReference =
@@ -181,7 +195,9 @@ void BFReader::openInputFiles()
     }
     log()->get(LogLevel::Info) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar=" << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
     m_datumParserLidar = make_unique<bf::DatumParser>(m_args.fileLidar);
-    m_datumParserRtk = make_unique<bf::DatumParser>(m_args.fileRtk);
+    bf::DatumParser rtkDatumParser(m_args.fileRtk);
+    auto allDatums = rtkDatumParser.GetAllDatums();
+    m_rtkMsgs = convertDatumsToRTKMessage(allDatums);
     Json::Value value;
     bool success = jsonValueFromFile(m_args.fileAffine,value);
     if (!success)
@@ -210,6 +226,26 @@ bool BFReader::processOne(PointRef &point)
     return true;
 }
 */
+
+
+std::vector<msg::RTKMessage> BFReader::convertDatumsToRTKMessage(std::vector<bf::Datum> &datums)
+{
+    std::vector<msg::RTKMessage> messages;
+    for (auto &dat : datums)
+    {
+        msg::RTKMessage rtkMessage;
+        bool success = rtkMessage.ParseFromArray(dat.data, dat.size);
+        if (!success)
+        {
+            timespec &timespec = dat.time;
+            log()->get(LogLevel::Warning) << "Failed to ParseFromArray at " << TimespecToString(timespec) << "\n";
+        }
+        free(dat.data);
+        messages.emplace_back(rtkMessage);
+    }
+
+    return messages;
+}
 
 
 } //namespace pdal

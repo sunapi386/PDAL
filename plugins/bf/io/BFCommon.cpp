@@ -11,10 +11,11 @@ PointCloud getLidarPoints(bf::Datum &datum)
     return std::vector<LidarPoint>(data_ptr, data_ptr + point_num);
 }
 
-std::string TimespecToString(const timespec &timestamp)
+std::string TimespecToString(const timespec &timestamp, bool useDash)
 {
     std::stringstream sstream;
-    sstream << std::setfill('0') << std::setw(12) << timestamp.tv_sec << ".";
+    sstream << std::setfill('0') << std::setw(12) << timestamp.tv_sec;
+    sstream << (useDash ? "-" : ".");
     sstream << std::setfill('0') << std::setw(9) << timestamp.tv_nsec;
     return sstream.str();
 }
@@ -71,6 +72,7 @@ BFArgs readArgsFromJson(Json::Value &root)
     args.fileRtk = root.get("rtk", "").asString();
     args.fileLidar = root.get("lidar", "").asString();
     args.fileAffine = root.get("affine", "").asString();
+    args.dumpFrames = root.get("dumpFrames", false).asBool();
     return args;
 }
 
