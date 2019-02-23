@@ -18,6 +18,8 @@ struct BFArgs
     std::string fileLidar;
     std::string fileAffine;
     bool dumpFrames = false;
+    int nFramesSkip;
+    int nFramesRead;
 };
 
 template<typename T, typename... Args>
@@ -47,3 +49,4 @@ void writePCTextFile(PointCloud &pc, std::string &name);
 Eigen::Affine3d readAffineFromJson(Json::Value &root);
 BFArgs readArgsFromJson(Json::Value &root);
 bool jsonValueFromFile(std::string &filename, Json::Value &root);
+std::string rtkToString(msg::RTKMessage &rtkMessage);

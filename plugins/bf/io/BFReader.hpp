@@ -72,7 +72,7 @@ private:
 
     void affineSinglePoint(LidarPoint &point);
 
-    void mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts);
+    void mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts, msg::RTKMessage &rtkMsg);
 
     void mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage);
 };

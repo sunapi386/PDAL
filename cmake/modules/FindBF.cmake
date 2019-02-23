@@ -28,4 +28,3 @@ FIND_FILE(BF
 # Handle the QUIETLY and REQUIRED arguments and set BF_FOUND to TRUE
 # if all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(BF DEFAULT_MSG BF_LIB)

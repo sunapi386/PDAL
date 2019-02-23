@@ -23,10 +23,13 @@ std::string BFReader::getName() const
 
 void BFReader::addArgs(ProgramArgs& args)
 {
+    // also change BFCommon readArgsFromJson()
     args.add("rtk", "BF file, RTK", m_args.fileRtk);
     args.add("lidar", "BF file, lidar", m_args.fileLidar);
     args.add("affine", "Text file, spatial transformation affine", m_args.fileAffine);
     args.add("dumpFrames", "Bool flag to dump lidar csv", m_args.dumpFrames);
+    args.add("nFramesSkip", "Number of BF frames to skip", m_args.nFramesSkip);
+    args.add("nFramesRead", "Number of BF frames to read", m_args.nFramesRead);
 }
 
 void BFReader::initialize()
@@ -43,6 +46,9 @@ void BFReader::initialize()
         m_args = readArgsFromJson(parsedJson);
         checkForValidInputFiles();
         log()->get(LogLevel::Debug) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar=" << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
+        log()->get(LogLevel::Debug) << "-dumpFrames=" << m_args.dumpFrames << "\n";
+        log()->get(LogLevel::Debug) << "-nFramesSkip=" << m_args.nFramesSkip << "\n";
+        log()->get(LogLevel::Debug) << "-nFramesRead=" << m_args.nFramesRead << "\n";
 
         // handle rtk file
         bf::DatumParser rtkDatumParser(m_args.fileRtk);
@@ -114,8 +120,8 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
 
     point_count_t nPtsRead = 0;
-    uint nBFFramesRead = 0;
-    uint nFramesToRead = 5; // todo: change me
+    int nBFDatumsRead = 0;
+    int skip = m_args.nFramesSkip;
 
     auto time_point = std::chrono::system_clock::now();
 
@@ -124,12 +130,17 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     // this of course assumes the capture frequency are same
     // i.e. both captured at 10Hz.
 
-    while (nPtsRead < nPtsToRead && nBFFramesRead < nFramesToRead && datumParserLidar.GetDatum(datumLidar))
+    while (nPtsRead < nPtsToRead && nBFDatumsRead < m_args.nFramesRead && datumParserLidar.GetDatum(datumLidar))
     {
-
+        if (--skip > 0)
+        {
+            log()->get(LogLevel::Debug) << "Skip Datum (" << skip << " to skip)\n";
+            free(datumLidar.data);
+            continue;
+        }
         auto pointCloud = getLidarPoints(datumLidar);
         free(datumLidar.data);
-        log()->get(LogLevel::Debug) << "Datum " << nBFFramesRead << " size: " << unsigned(datumLidar.size) << " Bytes\n";
+        log()->get(LogLevel::Debug) << "Datum " << nBFDatumsRead << " size: " << unsigned(datumLidar.size) << " Bytes\n";
 
         // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
         // approx. 200k points in a datum for 128 beam lidar
@@ -137,12 +148,16 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         mutateLidarPCToVehiclePC(pointCloud);
         // interpolate a location from the time
         timespec &timespec = datumLidar.time;
-        mutateVehiclePCToInterpolatedRtkPC(pointCloud, timespec);
+        msg::RTKMessage interpolatedRtkMessage;
+        m_rtkInterpolator.GetTimedData(timespec, &interpolatedRtkMessage);
+        // not factoring in rotational angle movement during that 10 ms.
+        mutateVehiclePCToInterpolatedRtkPC(pointCloud, timespec, interpolatedRtkMessage);
 
         if (m_args.dumpFrames)
         {
             std::string timespecString = TimespecToString(timespec, true);
-            std::string name = "lidar_" + timespecString + "_" + ".csv";
+            std::string rtkString = rtkToString(interpolatedRtkMessage);
+            std::string name = "lidar_" + timespecString + "_" + rtkString + ".csv";
             writePCTextFile(pointCloud, name);
         }
 
@@ -159,7 +174,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             view->setField(Dimension::Id::GpsTime, nextId, TimespecToDouble(timespec));
             view->setField(m_LaserId, nextId, pt.laser_id);
             view->setField(m_LidarAngle, nextId, pt.lidar_angle);
-            view->setField(Dimension::Id::PointSourceId, nextId, nBFFramesRead);
+            view->setField(Dimension::Id::PointSourceId, nextId, nBFDatumsRead);
 
             /*processOne(point);*/ // todo: add streaming
 
@@ -167,7 +182,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             nextId++;
 
         }
-        nBFFramesRead++;
+        nBFDatumsRead++;
 
         if (m_cb)
         {
@@ -176,7 +191,9 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     }
 
     auto time_point_2 = std::chrono::system_clock::now();
-    log()->get(LogLevel::Info) << nPtsRead << "\n";
+    log()->get(LogLevel::Info) << "nFramesSkip: " << m_args.nFramesSkip << "\n";
+    log()->get(LogLevel::Info) << "nBFDatumsRead: " << nBFDatumsRead << "\n";
+    log()->get(LogLevel::Info) << "nPtsRead: " << nPtsRead << "\n";
     auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(time_point_2 - time_point);
     log()->get(LogLevel::Info) << delta.count() << "ms" << "\n";
 
@@ -255,14 +272,17 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
     return count;
 }
 
-void BFReader::mutateLidarPCToVehiclePC(PointCloud &pcIn) {
+void BFReader::mutateLidarPCToVehiclePC(PointCloud &pcIn)
+{
     // for every point, apply a transform from the affine matrix
-    for (auto &pt : pcIn) {
+    for (auto &pt : pcIn)
+    {
         affineSinglePoint(pt);
     }
 }
 
-void BFReader::affineSinglePoint(LidarPoint &pt) {
+void BFReader::affineSinglePoint(LidarPoint &pt)
+{
     Eigen::Vector3d pt3d(pt.x, pt.y, pt.z);
     pt3d = m_affine * pt3d;
     pt.x = pt3d[0];
@@ -271,7 +291,8 @@ void BFReader::affineSinglePoint(LidarPoint &pt) {
 }
 
 
-void BFReader::mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage) {
+void BFReader::mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage)
+{
 //    int utm_zone;
 //    bool utm_north;
 //    double x, y;
@@ -284,13 +305,11 @@ void BFReader::mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage) {
 }
 
 
-void BFReader::mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts) {
-    // not factoring in rotational angle movement during that 10 ms.
-    msg::RTKMessage interpolatedRtkMessage;
-    m_rtkInterpolator.GetTimedData(ts, &interpolatedRtkMessage);
-
-    for (auto &pt : pc) {
-        mutatePtToGlobal(pt, interpolatedRtkMessage);
+void BFReader::mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts, msg::RTKMessage &rtkMsg)
+{
+    for (auto &pt : pc)
+    {
+        mutatePtToGlobal(pt, rtkMsg);
     }
 }
 
