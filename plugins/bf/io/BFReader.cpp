@@ -30,6 +30,7 @@ void BFReader::addArgs(ProgramArgs& args)
     args.add("dumpFrames", "Bool flag to dump lidar csv", m_args.dumpFrames);
     args.add("nFramesSkip", "Number of BF frames to skip", m_args.nFramesSkip);
     args.add("nFramesRead", "Number of BF frames to read", m_args.nFramesRead);
+    args.add("mDistanceJump", "Distance to wait until car moves", m_args.mDistanceJump);
 }
 
 void BFReader::initialize()
@@ -88,16 +89,17 @@ void BFReader::addDimensions(PointLayoutPtr layout)
     layout->registerDim(Id::Y); // x,y,z are in meters
     layout->registerDim(Id::Z);
     layout->registerDim(Id::Intensity);
-    layout->registerDim(Id::InternalTime); // timestamp
-    layout->registerDim(Id::GpsTime);      // from rtk
-    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
-    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
-    layout->registerDim(Id::PointSourceId); // which frame id this point is from
+//    layout->registerDim(Id::InternalTime); // timestamp
+//    layout->registerDim(Id::GpsTime);      // from rtk
+//    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
+//    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
+//    layout->registerDim(Id::PointSourceId); // which frame id this point is from
 }
 
 void BFReader::ready(PointTableRef)
 {
-    SpatialReference ref("EPSG:3857");
+    SpatialReference ref("EPSG:26915+5703");
+//    SpatialReference ref("EPSG:3857");
     setSpatialReference(ref);
 }
 
@@ -129,6 +131,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     // when we read a lidar datum, also read in a rtk datum
     // this of course assumes the capture frequency are same
     // i.e. both captured at 10Hz.
+    msg::RTKMessage lastUsedRtkMsg;
 
     while (nPtsRead < nPtsToRead && nBFDatumsRead < m_args.nFramesRead && datumParserLidar.GetDatum(datumLidar))
     {
@@ -145,12 +148,24 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
         // approx. 200k points in a datum for 128 beam lidar
 
-        mutateLidarPCToVehiclePC(pointCloud);
+
         // interpolate a location from the time
         timespec &timespec = datumLidar.time;
         msg::RTKMessage interpolatedRtkMessage;
         m_rtkInterpolator.GetTimedData(timespec, &interpolatedRtkMessage);
+
+        double distanceM = distanceMetres(interpolatedRtkMessage, lastUsedRtkMsg);
+        int precision = std::numeric_limits<double>::max_digits10;
+        log()->get(LogLevel::Debug) << " (distanceM: " << std::setprecision(precision) << distanceM << ")\n";
+        if (distanceM < m_args.mDistanceJump)
+        {
+            log()->get(LogLevel::Debug) << "Skip " << rtkToString(interpolatedRtkMessage) << "\n";
+            continue;
+        }
+        lastUsedRtkMsg = interpolatedRtkMessage;
+
         // not factoring in rotational angle movement during that 10 ms.
+        mutateLidarPCToVehiclePC(pointCloud);
         mutateVehiclePCToInterpolatedRtkPC(pointCloud, timespec, interpolatedRtkMessage);
 
         if (m_args.dumpFrames)
@@ -170,11 +185,11 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             view->setField(Dimension::Id::Y, nextId, pt.y);
             view->setField(Dimension::Id::Z, nextId, pt.z);
             view->setField(Dimension::Id::Intensity, nextId, pt.intensity);
-            view->setField(Dimension::Id::InternalTime, nextId, TimespecToDouble(timespec));
-            view->setField(Dimension::Id::GpsTime, nextId, TimespecToDouble(timespec));
-            view->setField(m_LaserId, nextId, pt.laser_id);
-            view->setField(m_LidarAngle, nextId, pt.lidar_angle);
-            view->setField(Dimension::Id::PointSourceId, nextId, nBFDatumsRead);
+//            view->setField(Dimension::Id::InternalTime, nextId, TimespecToDouble(timespec));
+//            view->setField(Dimension::Id::GpsTime, nextId, TimespecToDouble(timespec));
+//            view->setField(m_LaserId, nextId, pt.laser_id);
+//            view->setField(m_LidarAngle, nextId, pt.lidar_angle);
+//            view->setField(Dimension::Id::PointSourceId, nextId, nBFDatumsRead);
 
             /*processOne(point);*/ // todo: add streaming
 

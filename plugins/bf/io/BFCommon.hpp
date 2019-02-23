@@ -20,6 +20,7 @@ struct BFArgs
     bool dumpFrames = false;
     int nFramesSkip;
     int nFramesRead;
+    double mDistanceJump;
 };
 
 template<typename T, typename... Args>
@@ -50,3 +51,4 @@ Eigen::Affine3d readAffineFromJson(Json::Value &root);
 BFArgs readArgsFromJson(Json::Value &root);
 bool jsonValueFromFile(std::string &filename, Json::Value &root);
 std::string rtkToString(msg::RTKMessage &rtkMessage);
+double distanceMetres(msg::RTKMessage &m1, msg::RTKMessage &m2);
