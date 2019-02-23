@@ -50,7 +50,7 @@ private:
 
     // the affine is small
     Eigen::Affine3d m_affine;
-    double m_rtkFirstFrameUtmX = 0, m_rtkFirstFrameUtmY = 0;
+    double m_rtkFirstUtmX = 0, m_rtkFirstUtmY = 0;
     int precision = std::numeric_limits<double>::max_digits10;
 
 
