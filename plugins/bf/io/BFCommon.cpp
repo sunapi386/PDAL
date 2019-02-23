@@ -79,7 +79,7 @@ BFArgs readArgsFromJson(Json::Value &root)
 Eigen::Affine3d readAffineFromJson(Json::Value &root)
 {
     Eigen::Affine3d affine3d;
-    Json::Value &value = root["translation"];
+//    Json::Value &value = root["translation"];
 //    affine3d.translation() = value;
 //    affine3d.linear() =  root["linear"];
     affine3d.translation() =

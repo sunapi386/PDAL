@@ -3,7 +3,7 @@
 #include <memory>
 #include <pdal/util/ProgramArgs.hpp>
 #include <pdal/util/FileUtils.hpp>
-#include <vendor/jsoncpp/dist/json/json.h>
+#include <json/json.h>
 
 namespace pdal
 {
@@ -38,10 +38,29 @@ void BFReader::initialize()
         bool success = jsonValueFromFile(m_filename, parsedJson);
         if (!success)
         {
-            throwError("Failed to parse JSON file " + m_filename);
+            throwError("Failed to parse JSON input file " + m_filename);
         }
         m_args = readArgsFromJson(parsedJson);
-        openInputFiles();
+        checkForValidInputFiles();
+        log()->get(LogLevel::Debug) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar=" << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
+
+        // handle rtk file
+        bf::DatumParser rtkDatumParser(m_args.fileRtk);
+        uint count = insertRtkDatumsIntoInterpolator(rtkDatumParser);
+        log()->get(LogLevel::Debug) << "Inserted " << count << " rtk datums to interpolate\n";
+
+        // handle lidar file
+        m_datumParserLidar = make_unique<bf::DatumParser>(m_args.fileLidar);
+
+        // handle affine file
+        Json::Value affineJsonValue;
+        success = jsonValueFromFile(m_args.fileAffine,affineJsonValue);
+        if (!success)
+        {
+            throwError("Failed to parse JSON affine file " + m_args.fileAffine);
+        }
+        m_affine = readAffineFromJson(affineJsonValue);
+
     }
     else
     {
@@ -96,7 +115,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
     point_count_t nPtsRead = 0;
     uint nBFFramesRead = 0;
-    uint nFramesToRead = 1;
+    uint nFramesToRead = 5; // todo: change me
 
     auto time_point = std::chrono::system_clock::now();
 
@@ -109,31 +128,24 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     {
 
         auto pointCloud = getLidarPoints(datumLidar);
-        // note the timestamp is not recorded in the datum itself
-        // and the lidar_angle is not used
-        // there are about 200k points in a single scan (for 128 beam lidar)
-
+        free(datumLidar.data);
         log()->get(LogLevel::Debug) << "Datum " << nBFFramesRead << " size: " << unsigned(datumLidar.size) << " Bytes\n";
 
-        free(datumLidar.data);
+        // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
+        // approx. 200k points in a datum for 128 beam lidar
 
-        timespec &timespec = datumLidar.time; // todo: interpolate on time for
+        mutateLidarPCToVehiclePC(pointCloud);
+        // interpolate a location from the time
+        timespec &timespec = datumLidar.time;
+        mutateVehiclePCToInterpolatedRtkPC(pointCloud, timespec);
+
         if (m_args.dumpFrames)
         {
             std::string timespecString = TimespecToString(timespec, true);
-//            std::string rtkString =
             std::string name = "lidar_" + timespecString + "_" + ".csv";
             writePCTextFile(pointCloud, name);
         }
 
-        // transform lidar frame to global reference
-        //    auto pcInVehicleReference =
-        //        transformReferenceFromLidarToVehicle(pointcloud);
-        //    savePC(pcInVehicleReference);
-
-        //    auto pcInGlobalFrame =
-        //        transformReferenceFromVehicleToGlobalApproximate(pcInVehicleReference);
-        //    savePC(pcInGlobalFrame);
 
 
         // the values we read and put them into the PointView object
@@ -174,7 +186,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
 
 
-void BFReader::openInputFiles()
+void BFReader::checkForValidInputFiles()
 {
     std::__cxx11::string missingFiles;
     if (!Utils::fileExists(m_args.fileRtk))
@@ -193,18 +205,7 @@ void BFReader::openInputFiles()
     {
         throwError("The specified files in " + m_filename + " were not found:" + missingFiles);
     }
-    log()->get(LogLevel::Info) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar=" << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
-    m_datumParserLidar = make_unique<bf::DatumParser>(m_args.fileLidar);
-    bf::DatumParser rtkDatumParser(m_args.fileRtk);
-    auto allDatums = rtkDatumParser.GetAllDatums();
-    m_rtkMsgs = convertDatumsToRTKMessage(allDatums);
-    Json::Value value;
-    bool success = jsonValueFromFile(m_args.fileAffine,value);
-    if (!success)
-    {
-        throwError("Failed to parse json file " + m_args.fileAffine);
-    }
-    m_affine = readAffineFromJson(value);
+
 }
 
 
@@ -228,23 +229,69 @@ bool BFReader::processOne(PointRef &point)
 */
 
 
-std::vector<msg::RTKMessage> BFReader::convertDatumsToRTKMessage(std::vector<bf::Datum> &datums)
+
+uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
 {
-    std::vector<msg::RTKMessage> messages;
-    for (auto &dat : datums)
+    uint count = 0;
+    bf::Datum datum {};
+    while (parser.GetDatum(datum))
     {
         msg::RTKMessage rtkMessage;
-        bool success = rtkMessage.ParseFromArray(dat.data, dat.size);
+        timespec &timespec = datum.time;
+
+        bool success = rtkMessage.ParseFromArray(datum.data, datum.size);
+        free(datum.data);
+
         if (!success)
         {
-            timespec &timespec = dat.time;
             log()->get(LogLevel::Warning) << "Failed to ParseFromArray at " << TimespecToString(timespec) << "\n";
+            continue;
         }
-        free(dat.data);
-        messages.emplace_back(rtkMessage);
+
+        m_rtkInterpolator.InsertNewData(timespec, rtkMessage, false);
+        count++;
     }
 
-    return messages;
+    return count;
+}
+
+void BFReader::mutateLidarPCToVehiclePC(PointCloud &pcIn) {
+    // for every point, apply a transform from the affine matrix
+    for (auto &pt : pcIn) {
+        affineSinglePoint(pt);
+    }
+}
+
+void BFReader::affineSinglePoint(LidarPoint &pt) {
+    Eigen::Vector3d pt3d(pt.x, pt.y, pt.z);
+    pt3d = m_affine * pt3d;
+    pt.x = pt3d[0];
+    pt.y = pt3d[1];
+    pt.z = pt3d[2];
+}
+
+
+void BFReader::mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage) {
+//    int utm_zone;
+//    bool utm_north;
+//    double x, y;
+//    GeographicLib::UTMUPS::Forward(rtkMessage.latitude, rtkMessage.longitude(), utm_zone, utm_north, x,
+//                                   y);
+    // todo: fix this
+    pt.x += rtkMessage.latitude();
+    pt.y += rtkMessage.longitude();
+    pt.z += rtkMessage.altitude();
+}
+
+
+void BFReader::mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts) {
+    // not factoring in rotational angle movement during that 10 ms.
+    msg::RTKMessage interpolatedRtkMessage;
+    m_rtkInterpolator.GetTimedData(ts, &interpolatedRtkMessage);
+
+    for (auto &pt : pc) {
+        mutatePtToGlobal(pt, interpolatedRtkMessage);
+    }
 }
 
 

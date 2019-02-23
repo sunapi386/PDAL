@@ -17,7 +17,7 @@ struct BFArgs
     std::string fileRtk;
     std::string fileLidar;
     std::string fileAffine;
-    bool dumpFrames;
+    bool dumpFrames = false;
 };
 
 template<typename T, typename... Args>

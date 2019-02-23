@@ -5,6 +5,7 @@
 #include <pdal/util/IStream.hpp>
 #include <json/value.h>
 #include <vendor/eigen/Eigen/Dense>
+#include <bf_rtk_interpolator.h>
 #include "bf_datum_parser.h"
 #include "BFCommon.hpp"
 
@@ -45,7 +46,7 @@ private:
     std::unique_ptr<bf::DatumParser> m_datumParserLidar;
 
     // this rtk datum file is usually small, 1-100 Mbs so we can store it in memory
-    std::vector<msg::RTKMessage> m_rtkMsgs;
+    bf::RTKInterpolator m_rtkInterpolator;
 
     // the affine is small
     Eigen::Affine3d m_affine;
@@ -63,8 +64,16 @@ private:
 
     void done(PointTableRef table) override; // close files or reset state initialized in ready()
 
-    void openInputFiles();
-    std::vector<msg::RTKMessage> convertDatumsToRTKMessage(std::vector<bf::Datum> &datums);
+    void checkForValidInputFiles();
 
+    uint insertRtkDatumsIntoInterpolator(bf::DatumParser &parser);
+
+    void mutateLidarPCToVehiclePC(PointCloud &inPc);
+
+    void affineSinglePoint(LidarPoint &point);
+
+    void mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts);
+
+    void mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage);
 };
 }

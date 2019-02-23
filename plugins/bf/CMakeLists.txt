@@ -22,7 +22,6 @@ protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS io/vehicle_state.proto)
 # pthreads lib
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-message(BF: ${BF})
 #target_link_libraries(reader_bf ${BF} Threads::Threads ${PROTOBUF_LIBRARIES} Eigen3::Eigen GeographicLib)
 
 #
