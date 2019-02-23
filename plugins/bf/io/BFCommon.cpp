@@ -117,12 +117,14 @@ bool jsonValueFromFile(std::string &filename, Json::Value &root)
 #define earthRadiusKm 6371.0
 
 // This function converts decimal degrees to radians
-double deg2rad(double deg) {
+double deg2rad(double deg)
+{
     return (deg * M_PI / 180);
 }
 
 //  This function converts radians to decimal degrees
-double rad2deg(double rad) {
+double rad2deg(double rad)
+{
     return (rad * 180 / M_PI);
 }
 
@@ -135,7 +137,8 @@ double rad2deg(double rad) {
  * @param lon2d Longitude of the second point in degrees
  * @return The distance between the two points in kilometers
  */
-double distanceEarth(double lat1d, double lon1d, double lat2d, double lon2d) {
+double distanceEarth(double lat1d, double lon1d, double lat2d, double lon2d)
+{
     double lat1r, lon1r, lat2r, lon2r, u, v;
     lat1r = deg2rad(lat1d);
     lon1r = deg2rad(lon1d);
@@ -146,7 +149,8 @@ double distanceEarth(double lat1d, double lon1d, double lat2d, double lon2d) {
     return 2.0 * earthRadiusKm * asin(sqrt(u * u + cos(lat1r) * cos(lat2r) * v * v));
 }
 
-double distanceMetres(msg::RTKMessage &m1, msg::RTKMessage &m2) {
+double distanceMetres(msg::RTKMessage &m1, msg::RTKMessage &m2)
+{
     double lat1 = m1.latitude();
     double lon1 = m1.longitude();
     double lat2 = m2.latitude();

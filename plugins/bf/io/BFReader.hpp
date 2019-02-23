@@ -50,6 +50,8 @@ private:
 
     // the affine is small
     Eigen::Affine3d m_affine;
+    double m_rtkFirstFrameUtmX = 0, m_rtkFirstFrameUtmY = 0;
+    int precision = std::numeric_limits<double>::max_digits10;
 
 
     void addArgs(ProgramArgs &args) override;
@@ -68,12 +70,12 @@ private:
 
     uint insertRtkDatumsIntoInterpolator(bf::DatumParser &parser);
 
-    void mutateLidarPCToVehiclePC(PointCloud &inPc);
+    void mutatePCFromLidarToRTK(PointCloud &inPc);
+    void mutatePCFromRtkToUTM(PointCloud &inPc, msg::RTKMessage &rtkMsg);
+    void mutatePointFromRtkToUTM(LidarPoint &rtkPt, double utmX, double utmY);
 
-    void affineSinglePoint(LidarPoint &point);
+    void affineSinglePoint(LidarPoint &point, Eigen::Affine3d &affine);
 
-    void mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts, msg::RTKMessage &rtkMsg);
 
-    void mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage);
 };
 }

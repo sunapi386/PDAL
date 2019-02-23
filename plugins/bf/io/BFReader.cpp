@@ -3,6 +3,7 @@
 #include <memory>
 #include <pdal/util/ProgramArgs.hpp>
 #include <pdal/util/FileUtils.hpp>
+#include <GeographicLib/UTMUPS.hpp>
 #include <json/json.h>
 
 namespace pdal
@@ -98,7 +99,9 @@ void BFReader::addDimensions(PointLayoutPtr layout)
 
 void BFReader::ready(PointTableRef)
 {
-    SpatialReference ref("EPSG:26915+5703");
+//    SpatialReference ref("EPSG:3857+5703");
+    SpatialReference ref("EPSG:26910");
+//    SpatialReference ref("EPSG:26910+5705");
 //    SpatialReference ref("EPSG:3857");
     setSpatialReference(ref);
 }
@@ -137,13 +140,13 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     {
         if (--skip > 0)
         {
-            log()->get(LogLevel::Debug) << "Skip Datum (" << skip << " to skip)\n";
+            // log()->get(LogLevel::Debug) << "Skip Datum (" << skip << " to skip)\n";
             free(datumLidar.data);
             continue;
         }
         auto pointCloud = getLidarPoints(datumLidar);
         free(datumLidar.data);
-        log()->get(LogLevel::Debug) << "Datum " << nBFDatumsRead << " size: " << unsigned(datumLidar.size) << " Bytes\n";
+        // log()->get(LogLevel::Debug) << "Datum " << nBFDatumsRead << " size: " << unsigned(datumLidar.size) << " Bytes\n";
 
         // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
         // approx. 200k points in a datum for 128 beam lidar
@@ -154,19 +157,20 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         msg::RTKMessage interpolatedRtkMessage;
         m_rtkInterpolator.GetTimedData(timespec, &interpolatedRtkMessage);
 
+        // check and skips datums if they're too close to each other
+        // make sure we have moved a certain distance first
         double distanceM = distanceMetres(interpolatedRtkMessage, lastUsedRtkMsg);
-        int precision = std::numeric_limits<double>::max_digits10;
-        log()->get(LogLevel::Debug) << " (distanceM: " << std::setprecision(precision) << distanceM << ")\n";
         if (distanceM < m_args.mDistanceJump)
         {
-            log()->get(LogLevel::Debug) << "Skip " << rtkToString(interpolatedRtkMessage) << "\n";
+            // log()->get(LogLevel::Debug) << " (distanceM: " << std::setprecision(precision) << distanceM << ")\n";
+//            log()->get(LogLevel::Debug) << "Skip " << rtkToString(interpolatedRtkMessage) << "\n";
             continue;
         }
         lastUsedRtkMsg = interpolatedRtkMessage;
 
         // not factoring in rotational angle movement during that 10 ms.
-        mutateLidarPCToVehiclePC(pointCloud);
-        mutateVehiclePCToInterpolatedRtkPC(pointCloud, timespec, interpolatedRtkMessage);
+        mutatePCFromLidarToRTK(pointCloud);
+        mutatePCFromRtkToUTM(pointCloud, interpolatedRtkMessage);
 
         if (m_args.dumpFrames)
         {
@@ -287,46 +291,109 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
     return count;
 }
 
-void BFReader::mutateLidarPCToVehiclePC(PointCloud &pcIn)
+void BFReader::mutatePCFromLidarToRTK(PointCloud &pcIn)
 {
     // for every point, apply a transform from the affine matrix
     for (auto &pt : pcIn)
     {
-        affineSinglePoint(pt);
+        affineSinglePoint(pt, m_affine);
     }
 }
 
-void BFReader::affineSinglePoint(LidarPoint &pt)
+void BFReader::affineSinglePoint(LidarPoint &pt, Eigen::Affine3d &affine)
 {
     Eigen::Vector3d pt3d(pt.x, pt.y, pt.z);
-    pt3d = m_affine * pt3d;
+    pt3d = affine * pt3d;
     pt.x = pt3d[0];
     pt.y = pt3d[1];
     pt.z = pt3d[2];
 }
 
 
-void BFReader::mutatePtToGlobal(LidarPoint &pt, msg::RTKMessage &rtkMessage)
-{
-//    int utm_zone;
-//    bool utm_north;
-//    double x, y;
-//    GeographicLib::UTMUPS::Forward(rtkMessage.latitude, rtkMessage.longitude(), utm_zone, utm_north, x,
-//                                   y);
-    // todo: fix this
-    pt.x += rtkMessage.latitude();
-    pt.y += rtkMessage.longitude();
-    pt.z += rtkMessage.altitude();
-}
 
-
-void BFReader::mutateVehiclePCToInterpolatedRtkPC(PointCloud pc, timespec &ts, msg::RTKMessage &rtkMsg)
+void BFReader::mutatePCFromRtkToUTM(PointCloud &pc, msg::RTKMessage &rtkMsg)
 {
+
+    // convert to UTM, don't touch the altitude
+    int utmZone;
+    bool utmNorth;
+    double utmX, utmY;
+
+    // todo: look into handling altitude;
+    // todo: for performance simplify the lidar-rtk and rtk-utm transform into a single affine
+
+    GeographicLib::UTMUPS::Forward(rtkMsg.latitude(), rtkMsg.longitude(), utmZone, utmNorth, utmX, utmY);
+    // with the x,y do transform of the lidarPt (use original row, pitch, yaw, altitude)
+    // create affine from x,y,z,r,p,y (with this 6 parameters) we can construct affine transform for lidarPt to UTM
+    Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
+    double utmZ = rtkMsg.altitude();
+    affine3d.translation() = Eigen::Vector3d(utmX, utmY, utmZ);
+    affine3d.translation() = Eigen::Vector3d(utmX, 0, 0);
+    /*
+        Eigen::AngleAxisd rollAngle(rtkMsg.roll(), Eigen::Vector3d::UnitX());
+        Eigen::AngleAxisd pitchAngle(rtkMsg.pitch(), Eigen::Vector3d::UnitY());
+        Eigen::AngleAxisd yawAngle(rtkMsg.heading(), Eigen::Vector3d::UnitZ());
+        Eigen::Quaternion<double> q =  yawAngle*pitchAngle *rollAngle;
+        */
+//    affine3d = q;
+
     for (auto &pt : pc)
     {
-        mutatePtToGlobal(pt, rtkMsg);
+
+//        affineSinglePoint(pt, affine3d);
+        mutatePointFromRtkToUTM(pt, utmX, utmY);
     }
 }
 
+
+void BFReader::mutatePointFromRtkToUTM(LidarPoint &rtkPt, double utmX, double utmY)
+{
+
+    // any units in meters, we'll have to project into UTM. Because we can't work with lat/lng in meters
+    // think of UTM as a tool to treat global coordinates (radial) as euclidean space (flat)
+
+    if (m_rtkFirstFrameUtmX == 0 && m_rtkFirstFrameUtmY == 0)
+    {
+        log()->get(LogLevel::Debug) << std::setprecision(precision) << "m_rtkFirstFrameUtmX=" << utmX << "\n";
+        log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmY=" << utmY << "\n";
+        m_rtkFirstFrameUtmX = utmX;
+        m_rtkFirstFrameUtmY = utmY;
+        rtkPt.x = 0;
+        rtkPt.y = 0;
+    }
+    else
+    {
+        rtkPt.x += utmX - m_rtkFirstFrameUtmX;
+        rtkPt.y += utmY - m_rtkFirstFrameUtmY;
+    }
+    // store as UTM, or call reverse and pass in x, y get latlng.
+
+    /*
+         *    motion_compensator.CompensateCloudToEnd(lidar_points_, transform_affine,
+                            utility::bf::DoubleToTimespec(timespec - 0.1), transform_affine_next,
+                            utility::bf::DoubleToTimespec(timespec), &lidar_points_);
+
+        //*//*
+
+//  Eigen::Vector3d lidarPt(pt.x, pt.y, pt.z);
+////
+//  Eigen::Affine3d latLngPose;
+//  latLngPose.translation() = Eigen::Vector3d();
+//  // basically what 1 unit of measure equals in the lat/lng space.
+//  // i.e. 1 m in rtk frame is
+////  Eigen::Quaternion<double> quat(pose_proto.qw(), pose_proto.qx(), pose_proto.qy(), pose_proto.qz());
+////  to_pose_eigen.linear() = quat.matrix();
+////
+////
+//  Eigen::Affine3d rtkPose;
+//  rtkPose.translation() = Eigen::Vector3d(rtkMessage.latitude(), rtkMessage.longitude(), rtkMessage.altitude());
+//
+//
+//  Eigen::Vector3d point_out = latLngPose.inverse() * rtkPose * lidarPt;
+//  pt.x = static_cast<float>(point_out[0]);
+//  pt.y = static_cast<float>(point_out[1]);
+//  pt.z = static_cast<float>(point_out[2]);
+*/
+}
 
 } //namespace pdal
