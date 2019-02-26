@@ -32,10 +32,12 @@ void BFReader::addArgs(ProgramArgs& args)
     args.add("nFramesSkip", "Number of BF frames to skip", m_args.nFramesSkip);
     args.add("nFramesRead", "Number of BF frames to read", m_args.nFramesRead);
     args.add("mDistanceJump", "Distance to wait until car moves", m_args.mDistanceJump);
+    args.add("motionCompensate", "Perform motion compensation", m_args.mCompensate);
 }
 
 void BFReader::initialize()
 {
+    log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << "\n";
     log()->get(LogLevel::Debug) << std::setprecision(precision);
     // load arguments from json file when provided, but manual args takes precedence
     if (!m_filename.empty())
@@ -122,11 +124,8 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     // Determine the ID of the next point in the point view
     PointId nextId = view->size();
 
-    log()->get(LogLevel::Info) << "BFReader m_filename: " << m_filename << std::endl;
-
     bf::DatumParser datumParserLidar(m_args.fileLidar);
     bf::Datum datumLidar{};
-
 
     point_count_t nPtsRead = 0;
     int nBFDatumsRead = 0;
@@ -185,8 +184,11 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
          *    so in our case it is UTM. We may change this to lat-lng later on.
          *
          */
-//        mutatePC_addInterpolatedTimeToEachPoint(segment, pointCloud);
-//        mutatePC_doMotionCompensation(segment, pointCloud);
+        if (m_args.mCompensate)
+        {
+            mutatePC_addInterpolatedTimeEachPointToPC(segment, pointCloud);
+            mutatePC_doMotionCompensation(segment, pointCloud);
+        }
         mutatePC_referenceFromLidarToRTK(pointCloud);
         mutatePC_referenceFromRtkToUTM(pointCloud, lastUsedRtkMsg);
 
@@ -360,8 +362,6 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloud &pc, msg::RTKMessage &r
     // create affine from x,y,z,r,p,y (with this 6 parameters) we can construct affine transform for lidarPt to UTM
     GeographicLib::UTMUPS::Forward(rtkMsg.latitude(), rtkMsg.longitude(), utmZone, utmNorth, utmX, utmY);
 
-//    affine3d = q;
-
     // any units in meters, we'll have to project into UTM. Because we can't work with lat/lng in meters
     // think of UTM as a tool to treat global coordinates (radial) as euclidean space (flat)
 
@@ -380,7 +380,6 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloud &pc, msg::RTKMessage &r
     Eigen::AngleAxisd yawAngle(M_PI / 2 - rtkMsg.heading()  / 180.0 * M_PI, Eigen::Vector3d::UnitZ());
     Eigen::Quaternion<double> quaternion =  yawAngle * rollAngle * pitchAngle;
     affine3d.linear() = quaternion.matrix();
-    affine3d.linear() = quaternion.matrix();
 
 
     for (auto &pt : pc)
@@ -394,18 +393,50 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloud &pc, msg::RTKMessage &r
  * @param segment
  * @param cloud
  */
-void BFReader::mutatePC_addInterpolatedTimeToEachPoint(TimePlaceSegment &segment, PointCloud &cloud)
+void BFReader::mutatePC_addInterpolatedTimeEachPointToPC(TimePlaceSegment &segment, PointCloud &cloud)
 {
-    double travelTimeSeconds = TimespecToDouble(segment.finish.time) - TimespecToDouble(segment.start.time);
-    double angularFrequency = 2 * M_PI / travelTimeSeconds;
+    double startTime = TimespecToDouble(segment.start.time);
+    double finishTime = TimespecToDouble(segment.finish.time);
+    double travelTimeSeconds = finishTime - startTime;
+    double radiansPerSecond = 2 * M_PI / travelTimeSeconds;
     double startTheta = radiansFromCoord(cloud.front());
     for (LidarPoint &pt : cloud)
     {
-        // todo: check is this subtraction correct
-        double relativeRadiansFromStart = radiansFromCoord(pt) - startTheta;
-        double secondsToRotateToTheta = relativeRadiansFromStart * angularFrequency;
-        pt.timestamp = TimespecToDouble(segment.start.time) + secondsToRotateToTheta;
+        double radiansFromStart = radiansFromCoord(pt) - startTheta;
+        double secondsToRotateToTheta = radiansFromStart / radiansPerSecond;
+        pt.timestamp = startTime + secondsToRotateToTheta;
     }
+}
+
+void BFReader::mutatePC_doMotionCompensation(TimePlaceSegment &segment, PointCloud &cloud)
+{
+    // todo: fix efficiency?
+    for (LidarPoint point : cloud)
+    {
+        compensatePoint(point);
+    }
+}
+
+/*!
+ * The reason for having a point-level compensation is we may want to do streaming for large file sizes
+ * @param point
+ */
+void BFReader::compensatePoint(LidarPoint &point)
+{
+    msg::RTKMessage interpolatedLocation;
+    m_rtkInterpolator.GetTimedData(DoubleToTimespec(point.timestamp), &interpolatedLocation);
+
+    Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
+    affine3d.translation() = Eigen::Vector3d(interpolatedLocation.longitude(),
+                             interpolatedLocation.latitude(),
+                             interpolatedLocation.altitude());
+    Eigen::AngleAxisd rollAngle(interpolatedLocation.roll() / 180.0 * M_PI, Eigen::Vector3d::UnitX());
+    Eigen::AngleAxisd pitchAngle(interpolatedLocation.pitch() / 180.0 * M_PI, Eigen::Vector3d::UnitY());
+    Eigen::AngleAxisd yawAngle(M_PI / 2 - interpolatedLocation.heading()  / 180.0 * M_PI, Eigen::Vector3d::UnitZ());
+    Eigen::Quaternion<double> quaternion =  yawAngle * rollAngle * pitchAngle;
+    affine3d.linear() = quaternion.matrix();
+
+    affineSinglePoint(point, affine3d);
 }
 
 

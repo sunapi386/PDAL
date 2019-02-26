@@ -64,12 +64,16 @@ void writePCTextFile(PointCloud &pc, std::string &name)
     // todo: save the points into PDAL acceptable format
     std::ofstream outfile(name);
     outfile << "idx, x, y, z, intensity, timestamp, laser_id, lidar_angle\n";
+
     for (uint i = 0; i < pc.size(); ++i)
     {
         LidarPoint &p = pc[i];
-        outfile << i << ", " << p.x << ", " << p.y << ", " << p.z << ", "
+        outfile << std::setfill('0') << std::setw(10) << std::fixed << std::setprecision(8);
+        outfile << i << ", " << p.x << ", " << p.y << ", " << p.z << ", ";
+        outfile << std::setfill('0') << std::setw(7) << std::fixed << std::setprecision(8)
                 << unsigned(p.intensity) << ", "
-                << TimespecToString(DoubleToTimespec(p.timestamp)) << ", "
+                << TimespecToString(DoubleToTimespec(p.timestamp)) << ", ";
+        outfile << std::setfill('0') << std::setw(6) << std::fixed << std::setprecision(3)
                 << unsigned(p.laser_id) << ", " << unsigned(p.lidar_angle) << "\n";
     }
     outfile.close();
@@ -87,6 +91,7 @@ BFArgs readArgsFromJson(Json::Value &root)
     args.nFramesSkip = root.get("nFramesSkip", false).asInt();
     args.nFramesRead = root.get("nFramesRead", false).asInt();
     args.mDistanceJump = root.get("mDistanceJump", false).asDouble();
+    args.mCompensate = root.get("mCompensate", false).asBool();
     return args;
 }
 
@@ -169,6 +174,6 @@ std::string preciseDoubleStr(double d, uint precision)
 
 double radiansFromCoord(LidarPoint &lidarPoint)
 {
-    double theta = -std::atan2(lidarPoint.y, lidarPoint.x);
+    double theta = /*-*/std::atan2(lidarPoint.y, lidarPoint.x);
     return theta;
 }

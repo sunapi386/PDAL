@@ -12,6 +12,7 @@
 #include <json/json.h>
 #include <vehicle_state.pb.h>
 
+// also edit: readArgsFromJson
 struct BFArgs
 {
     std::string fileRtk;
@@ -21,6 +22,7 @@ struct BFArgs
     int nFramesSkip;
     int nFramesRead;
     double mDistanceJump;
+    bool mCompensate = true;
 };
 
 template<typename T, typename... Args>

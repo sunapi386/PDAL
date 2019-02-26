@@ -88,6 +88,10 @@ private:
      * @param segment
      * @param cloud
      */
-    void mutatePC_addInterpolatedTimeToEachPoint(TimePlaceSegment &segment, PointCloud &cloud);
+    void mutatePC_addInterpolatedTimeEachPointToPC(TimePlaceSegment &segment, PointCloud &cloud);
+
+    void mutatePC_doMotionCompensation(TimePlaceSegment &segment, PointCloud &cloud);
+
+    void compensatePoint(LidarPoint &point);
 };
 }
