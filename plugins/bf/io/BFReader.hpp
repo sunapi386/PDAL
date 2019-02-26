@@ -70,12 +70,24 @@ private:
 
     uint insertRtkDatumsIntoInterpolator(bf::DatumParser &parser);
 
-    void mutatePCFromLidarToRTK(PointCloud &inPc);
-    void mutatePCFromRtkToUTM(PointCloud &inPc, msg::RTKMessage &rtkMsg);
-    void mutatePointFromRtkToUTM(LidarPoint &rtkPt, double utmX, double utmY);
+    void mutatePC_referenceFromLidarToRTK(PointCloud &inPc);
+    void mutatePC_referenceFromRtkToUTM(PointCloud &inPc, msg::RTKMessage &rtkMsg);
 
     void affineSinglePoint(LidarPoint &point, Eigen::Affine3d &affine);
 
+    /*!
+     * We need to interpolate the travelled distance during that one lidar
+     * scan sweep.
+     * @param datumLidar
+     * @return time and location for the start and end of the lidar scan.
+     */
+    TimePlaceSegment interpolateTimePlaceSegment(const bf::Datum &datumLidar) const;
 
+    /*!
+     * Motion compensation for the point cloud, given a start-finish time-place.
+     * @param segment
+     * @param cloud
+     */
+    void mutatePC_addInterpolatedTimeToEachPoint(TimePlaceSegment &segment, PointCloud &cloud);
 };
 }

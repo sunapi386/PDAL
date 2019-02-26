@@ -36,6 +36,7 @@ void BFReader::addArgs(ProgramArgs& args)
 
 void BFReader::initialize()
 {
+    log()->get(LogLevel::Debug) << std::setprecision(precision);
     // load arguments from json file when provided, but manual args takes precedence
     if (!m_filename.empty())
     {
@@ -47,7 +48,8 @@ void BFReader::initialize()
         }
         m_args = readArgsFromJson(parsedJson);
         checkForValidInputFiles();
-        log()->get(LogLevel::Debug) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar=" << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
+        log()->get(LogLevel::Debug) << "Opening:\n-rtk=" << m_args.fileRtk << "\n-lidar="
+                                    << m_args.fileLidar << "\n-affine=" << m_args.fileAffine << "\n";
         log()->get(LogLevel::Debug) << "-dumpFrames=" << m_args.dumpFrames << "\n";
         log()->get(LogLevel::Debug) << "-nFramesSkip=" << m_args.nFramesSkip << "\n";
         log()->get(LogLevel::Debug) << "-nFramesRead=" << m_args.nFramesRead << "\n";
@@ -92,8 +94,10 @@ void BFReader::addDimensions(PointLayoutPtr layout)
     layout->registerDim(Id::Intensity);
 //    layout->registerDim(Id::InternalTime); // timestamp
 //    layout->registerDim(Id::GpsTime);      // from rtk
-//    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8); // laser_id (e.g. 40 beam lidar has id 0-40)
-//    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Unsigned16); // lidar_angle (e.g. a full lidar rotation)
+//    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8);
+// laser_id (e.g. 40 beam lidar has id 0-40)
+//    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Unsigned16);
+// lidar_angle (e.g. a full lidar rotation)
 //    layout->registerDim(Id::PointSourceId); // which frame id this point is from
 }
 
@@ -136,7 +140,9 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     // i.e. both captured at 10Hz.
     msg::RTKMessage lastUsedRtkMsg;
 
-    while (nPtsRead < nPtsToRead && nBFDatumsRead < m_args.nFramesRead && datumParserLidar.GetDatum(datumLidar))
+    while (nPtsRead < nPtsToRead &&
+            nBFDatumsRead < m_args.nFramesRead &&
+            datumParserLidar.GetDatum(datumLidar))
     {
         if (--skip > 0)
         {
@@ -150,31 +156,44 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         // approx. 200k points in a datum for 128 beam lidar
 
 
-        // interpolate a location from the time
-        timespec &timespec = datumLidar.time;
-        msg::RTKMessage interpolatedRtkMessage;
-        m_rtkInterpolator.GetTimedData(timespec, &interpolatedRtkMessage);
+        TimePlaceSegment segment = interpolateTimePlaceSegment(datumLidar);
+
+        double distTravelledDuringScan = distanceMeters(segment.start.rtkMessage, segment.finish.rtkMessage);
+        log()->get(LogLevel::Debug) << "RTK travelled "
+                                    << preciseDoubleStr(distTravelledDuringScan, 5) << "m during scan\n";
 
         // check and skips datums if they're too close to each other
         // make sure we have moved a certain distance first
-        double distanceM = distanceMetres(interpolatedRtkMessage, lastUsedRtkMsg);
-        if (distanceM < m_args.mDistanceJump)
+        double distSinceLastRtkMsgUsed = distanceMeters(segment.start.rtkMessage, lastUsedRtkMsg);
+        if (distSinceLastRtkMsgUsed < m_args.mDistanceJump)
         {
-            // log()->get(LogLevel::Debug) << " (distanceM: " << std::setprecision(precision) << distanceM << ")\n";
-//            log()->get(LogLevel::Debug) << "Skip " << rtkToString(interpolatedRtkMessage) << "\n";
+            log()->get(LogLevel::Debug) << "Datum skipped, distance moved: "
+                                        << preciseDoubleStr(distSinceLastRtkMsgUsed, 5)
+                                        << "m less than " << m_args.mDistanceJump << "m\n";
             continue;
         }
-        lastUsedRtkMsg = interpolatedRtkMessage;
-        log()->get(LogLevel::Info) << "Datum " << nBFDatumsRead << " " << unsigned(datumLidar.size)/ 1000.0 << " KBytes\n";
+        lastUsedRtkMsg = segment.start.rtkMessage;
+        log()->get(LogLevel::Info) << "Datum " << nBFDatumsRead << " "
+                                   << preciseDoubleStr(unsigned(datumLidar.size)/ 1000.0, 5) << " KBytes\n";
 
-        // not factoring in rotational angle movement during that 10 ms.
-        mutatePCFromLidarToRTK(pointCloud);
-        mutatePCFromRtkToUTM(pointCloud, interpolatedRtkMessage);
+        /* 0. The point cloud does not store capture time for each point, so we have to interpolate.
+         * 1. The vehicle may be moving while we captured a scan, so we first must do motion compensation
+         * 2. The lidar points were captured in lidar reference (center is lidar),
+         *    we transform the coordinates into RTK frame, so measurements are from the RTK.
+         *    This uses the affine json.
+         * 3. We must then transform the RTK coordinates into a standardized global reference frame,
+         *    so in our case it is UTM. We may change this to lat-lng later on.
+         *
+         */
+//        mutatePC_addInterpolatedTimeToEachPoint(segment, pointCloud);
+//        mutatePC_doMotionCompensation(segment, pointCloud);
+        mutatePC_referenceFromLidarToRTK(pointCloud);
+        mutatePC_referenceFromRtkToUTM(pointCloud, lastUsedRtkMsg);
 
         if (m_args.dumpFrames)
         {
-            std::string timespecString = TimespecToString(timespec, true);
-            std::string rtkString = rtkToString(interpolatedRtkMessage);
+            std::string timespecString = TimespecToString(segment.start.time, true);
+            std::string rtkString = rtkToString(segment.start.rtkMessage);
             std::string name = "lidar_" + timespecString + "_" + rtkString + ".csv";
             writePCTextFile(pointCloud, name);
         }
@@ -217,7 +236,23 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     return nPtsRead;
 }
 
-
+TimePlaceSegment BFReader::interpolateTimePlaceSegment(const bf::Datum &datumLidar) const
+{
+    msg::RTKMessage interpolatedScanStartRtkMsg;
+    msg::RTKMessage interpolatedScanFinishRtkMsg;
+    timespec timespecStart= DoubleToTimespec(TimespecToDouble(datumLidar.time) - 0.1);// 0.1s prior
+    timespec timespecFinish = datumLidar.time;
+    m_rtkInterpolator.GetTimedData(timespecStart, &interpolatedScanStartRtkMsg);
+    m_rtkInterpolator.GetTimedData(timespecFinish, &interpolatedScanFinishRtkMsg);
+//    TimePlaceSegment timePlaceSegment
+//    {
+//        .start = TimePlace{.time=timespecBegin, .rtkMessage=interpolatedScanStartRtkMsg},
+//        .finish = TimePlace{.time=timespecBegin, .rtkMessage=interpolatedScanStartRtkMsg}
+//    }; //  sorry, unimplemented: non-trivial designated initializers not supported
+    TimePlace start = TimePlace(interpolatedScanStartRtkMsg, timespecStart);
+    TimePlace finish = TimePlace(interpolatedScanFinishRtkMsg, timespecFinish);
+    return TimePlaceSegment(start, finish);
+}
 
 
 void BFReader::checkForValidInputFiles()
@@ -289,7 +324,7 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
     return count;
 }
 
-void BFReader::mutatePCFromLidarToRTK(PointCloud &pcIn)
+void BFReader::mutatePC_referenceFromLidarToRTK(PointCloud &pcIn)
 {
     // for every point, apply a transform from the affine matrix
     for (auto &pt : pcIn)
@@ -301,7 +336,7 @@ void BFReader::mutatePCFromLidarToRTK(PointCloud &pcIn)
 void BFReader::affineSinglePoint(LidarPoint &pt, Eigen::Affine3d &affine)
 {
     Eigen::Vector3d pt3d(pt.x, pt.y, pt.z);
-    pt3d = affine * pt3d;
+    pt3d = affine * pt3d; // .eval()
     pt.x = pt3d[0];
     pt.y = pt3d[1];
     pt.z = pt3d[2];
@@ -309,7 +344,7 @@ void BFReader::affineSinglePoint(LidarPoint &pt, Eigen::Affine3d &affine)
 
 
 
-void BFReader::mutatePCFromRtkToUTM(PointCloud &pc, msg::RTKMessage &rtkMsg)
+void BFReader::mutatePC_referenceFromRtkToUTM(PointCloud &pc, msg::RTKMessage &rtkMsg)
 {
 
     // convert to UTM, don't touch the altitude
@@ -332,7 +367,7 @@ void BFReader::mutatePCFromRtkToUTM(PointCloud &pc, msg::RTKMessage &rtkMsg)
 
     if (m_rtkFirstUtmX == 0 && m_rtkFirstUtmY == 0)
     {
-        log()->get(LogLevel::Debug) << std::setprecision(precision) << "m_rtkFirstFrameUtmX=" << utmX << "\n";
+        log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmX=" << utmX << "\n";
         log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmY=" << utmY << "\n";
         m_rtkFirstUtmX = utmX;
         m_rtkFirstUtmY = utmY;
@@ -351,6 +386,25 @@ void BFReader::mutatePCFromRtkToUTM(PointCloud &pc, msg::RTKMessage &rtkMsg)
     for (auto &pt : pc)
     {
         affineSinglePoint(pt, affine3d);
+    }
+}
+
+/*!
+ * Since we have the start location and end location
+ * @param segment
+ * @param cloud
+ */
+void BFReader::mutatePC_addInterpolatedTimeToEachPoint(TimePlaceSegment &segment, PointCloud &cloud)
+{
+    double travelTimeSeconds = TimespecToDouble(segment.finish.time) - TimespecToDouble(segment.start.time);
+    double angularFrequency = 2 * M_PI / travelTimeSeconds;
+    double startTheta = radiansFromCoord(cloud.front());
+    for (LidarPoint &pt : cloud)
+    {
+        // todo: check is this subtraction correct
+        double relativeRadiansFromStart = radiansFromCoord(pt) - startTheta;
+        double secondsToRotateToTheta = relativeRadiansFromStart * angularFrequency;
+        pt.timestamp = TimespecToDouble(segment.start.time) + secondsToRotateToTheta;
     }
 }
 

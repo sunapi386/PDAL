@@ -149,7 +149,7 @@ double distanceEarth(double lat1d, double lon1d, double lat2d, double lon2d)
     return 2.0 * earthRadiusKm * asin(sqrt(u * u + cos(lat1r) * cos(lat2r) * v * v));
 }
 
-double distanceMetres(msg::RTKMessage &m1, msg::RTKMessage &m2)
+double distanceMeters(msg::RTKMessage &m1, msg::RTKMessage &m2)
 {
     double lat1 = m1.latitude();
     double lon1 = m1.longitude();
@@ -158,4 +158,17 @@ double distanceMetres(msg::RTKMessage &m1, msg::RTKMessage &m2)
     double distanceInKilometers = distanceEarth(lat1, lon1, lat2, lon2);
     double meters = distanceInKilometers * 1000;
     return meters;
+}
+
+std::string preciseDoubleStr(double d, uint precision)
+{
+    std::stringstream stream;
+    stream << std::fixed << std::setprecision(precision) << d;
+    return stream.str();
+}
+
+double radiansFromCoord(LidarPoint &lidarPoint)
+{
+    double theta = -std::atan2(lidarPoint.y, lidarPoint.x);
+    return theta;
 }
