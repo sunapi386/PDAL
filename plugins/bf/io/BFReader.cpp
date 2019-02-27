@@ -150,7 +150,9 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             free(datumLidar.data);
             continue;
         }
-        auto pointCloud = getLidarPoints(datumLidar);
+        auto pointCloud = fakeSingleLidarPoint(datumLidar);
+//        auto pointCloud = getLidarPoints(datumLidar);
+
         free(datumLidar.data);
         // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
         // approx. 200k points in a datum for 128 beam lidar
@@ -466,12 +468,35 @@ struct BFLidarPointSerialized
 };
 
 
-PointCloud BFReader::getSingleLidarPoint(bf::Datum &datum) {
-  PointCloud pointCloud = getLidarPoints(datum);
-  LidarPoint singleLidarPoint = pointCloud.points.front();
-  pointCloud.points.clear();
-  pointCloud.points.emplace_back(singleLidarPoint);
-  return pointCloud;
+PointCloud BFReader::fakeSingleLidarPoint(bf::Datum &datum)
+{
+    PointCloud pointCloud = getLidarPoints(datum);
+    LidarPoint &point = pointCloud.points.front();
+
+    LidarPoint xLidarPoint = point, yLidarPoint = point, zLidarPoint = point, lidarPoint = point;
+
+    lidarPoint.x = 0;
+    lidarPoint.y = 0;
+    lidarPoint.z = 0;
+
+    xLidarPoint.x = 1;
+    xLidarPoint.y = 0;
+    xLidarPoint.z = 0;
+
+    yLidarPoint.x = 0;
+    yLidarPoint.y = 1;
+    yLidarPoint.z = 0;
+
+    zLidarPoint.x = 0;
+    zLidarPoint.y = 0;
+    zLidarPoint.z = 1;
+
+    pointCloud.points.clear();
+    pointCloud.points.emplace_back(lidarPoint);
+    pointCloud.points.emplace_back(xLidarPoint);
+    pointCloud.points.emplace_back(yLidarPoint);
+    pointCloud.points.emplace_back(zLidarPoint);
+    return pointCloud;
 }
 
 
@@ -489,9 +514,10 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
     for (size_t i = 0; i < readPoints.size(); i++)
     {
         BFLidarPointSerialized &readPoint = readPoints[i];
-        if (i % 2 != 0) {
-            continue; // todo: remove me for artifically skinnying down the data
-        }
+//        if (i % 1 != 0)
+//        {
+//            continue; // todo: remove me for artifically skinnying down the data
+//        }
         // converts to a Lidar Point which uses doubles
         LidarPoint writePoint;
         writePoint.x = readPoint.x;
