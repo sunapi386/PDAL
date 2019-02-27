@@ -94,13 +94,13 @@ void BFReader::addDimensions(PointLayoutPtr layout)
     layout->registerDim(Id::Y); // x,y,z are in meters
     layout->registerDim(Id::Z);
     layout->registerDim(Id::Intensity);
-//    layout->registerDim(Id::InternalTime); // timestamp
+    layout->registerDim(Id::InternalTime); // timestamp
 //    layout->registerDim(Id::GpsTime);      // from rtk
-//    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8);
+    m_LaserId = layout->registerOrAssignDim("LaserId", Type::Unsigned8);
 // laser_id (e.g. 40 beam lidar has id 0-40)
-//    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Unsigned16);
+    m_LidarAngle = layout->registerOrAssignDim("LidarAngle", Type::Double);
 // lidar_angle (e.g. a full lidar rotation)
-//    layout->registerDim(Id::PointSourceId); // which frame id this point is from
+    layout->registerDim(Id::PointSourceId); // which frame id this point is from
 }
 
 void BFReader::ready(PointTableRef)
@@ -196,23 +196,23 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         {
             std::string timespecString = TimespecToString(segment.start.time, true);
             std::string rtkString = rtkToString(segment.start.rtkMessage);
-            std::string name = "lidar_" + timespecString + "_" + rtkString + ".csv";
-            writePCTextFile(pointCloud, name);
+            std::string name = timespecString + "_" + rtkString;
+            savePCToCSV(pointCloud, name);
         }
 
 
         // the values we read and put them into the PointView object
-        for (auto &pt : pointCloud)
+        for (LidarPointRef pt : pointCloud)
         {
             view->setField(Dimension::Id::X, nextId, pt.x);
             view->setField(Dimension::Id::Y, nextId, pt.y);
             view->setField(Dimension::Id::Z, nextId, pt.z);
             view->setField(Dimension::Id::Intensity, nextId, pt.intensity);
-//            view->setField(Dimension::Id::InternalTime, nextId, TimespecToDouble(timespec));
-//            view->setField(Dimension::Id::GpsTime, nextId, TimespecToDouble(timespec));
-//            view->setField(m_LaserId, nextId, pt.laser_id);
-//            view->setField(m_LidarAngle, nextId, pt.lidar_angle);
-//            view->setField(Dimension::Id::PointSourceId, nextId, nBFDatumsRead);
+            view->setField(Dimension::Id::InternalTime, nextId, pt.timestamp);
+//            view->setField(Dimension::Id::GpsTime, nextId, pt..);
+            view->setField(m_LaserId, nextId, pt.laser_id);
+            view->setField(m_LidarAngle, nextId, pt.lidar_angle);
+            view->setField(Dimension::Id::PointSourceId, nextId, nBFDatumsRead);
 
             /*processOne(point);*/ // todo: add streaming
 
@@ -326,19 +326,19 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
     return count;
 }
 
-void BFReader::mutatePC_referenceFromLidarToRTK(PointCloud &pcIn)
+void BFReader::mutatePC_referenceFromLidarToRTK(PointCloudRef pcIn)
 {
     // for every point, apply a transform from the affine matrix
-    for (auto &pt : pcIn)
+    for (LidarPointRef pt : pcIn)
     {
         affineSinglePoint(pt, m_affine);
     }
 }
 
-void BFReader::affineSinglePoint(LidarPoint &pt, Eigen::Affine3d &affine)
+void BFReader::affineSinglePoint(LidarPointRef pt, Eigen::Affine3d &affine)
 {
     Eigen::Vector3d pt3d(pt.x, pt.y, pt.z);
-    pt3d = affine * pt3d; // .eval()
+    pt3d = affine * pt3d.eval();
     pt.x = pt3d[0];
     pt.y = pt3d[1];
     pt.z = pt3d[2];
@@ -346,7 +346,7 @@ void BFReader::affineSinglePoint(LidarPoint &pt, Eigen::Affine3d &affine)
 
 
 
-void BFReader::mutatePC_referenceFromRtkToUTM(PointCloud &pc, msg::RTKMessage &rtkMsg)
+void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef pc, msg::RTKMessage &rtkMsg)
 {
 
     // convert to UTM, don't touch the altitude
@@ -393,25 +393,26 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloud &pc, msg::RTKMessage &r
  * @param segment
  * @param cloud
  */
-void BFReader::mutatePC_addInterpolatedTimeEachPointToPC(TimePlaceSegment &segment, PointCloud &cloud)
+void BFReader::mutatePC_addInterpolatedTimeEachPointToPC(TimePlaceSegment &segment, PointCloudRef cloud)
 {
     double startTime = TimespecToDouble(segment.start.time);
     double finishTime = TimespecToDouble(segment.finish.time);
     double travelTimeSeconds = finishTime - startTime;
     double radiansPerSecond = 2 * M_PI / travelTimeSeconds;
     double startTheta = radiansFromCoord(cloud.front());
-    for (LidarPoint &pt : cloud)
+    for (LidarPointRef pt : cloud)
     {
         double radiansFromStart = radiansFromCoord(pt) - startTheta;
         double secondsToRotateToTheta = radiansFromStart / radiansPerSecond;
         pt.timestamp = startTime + secondsToRotateToTheta;
+        pt.lidar_angle = rad2deg(radiansFromStart);
     }
 }
 
-void BFReader::mutatePC_doMotionCompensation(TimePlaceSegment &segment, PointCloud &cloud)
+void BFReader::mutatePC_doMotionCompensation(TimePlaceSegment &segment, PointCloudRef cloud)
 {
     // todo: fix efficiency?
-    for (LidarPoint point : cloud)
+    for (LidarPointRef point : cloud)
     {
         compensatePoint(point);
     }
@@ -421,7 +422,7 @@ void BFReader::mutatePC_doMotionCompensation(TimePlaceSegment &segment, PointClo
  * The reason for having a point-level compensation is we may want to do streaming for large file sizes
  * @param point
  */
-void BFReader::compensatePoint(LidarPoint &point)
+void BFReader::compensatePoint(LidarPointRef point)
 {
     msg::RTKMessage interpolatedLocation;
     m_rtkInterpolator.GetTimedData(DoubleToTimespec(point.timestamp), &interpolatedLocation);
@@ -430,6 +431,7 @@ void BFReader::compensatePoint(LidarPoint &point)
     affine3d.translation() = Eigen::Vector3d(interpolatedLocation.longitude(),
                              interpolatedLocation.latitude(),
                              interpolatedLocation.altitude());
+
     Eigen::AngleAxisd rollAngle(interpolatedLocation.roll() / 180.0 * M_PI, Eigen::Vector3d::UnitX());
     Eigen::AngleAxisd pitchAngle(interpolatedLocation.pitch() / 180.0 * M_PI, Eigen::Vector3d::UnitY());
     Eigen::AngleAxisd yawAngle(M_PI / 2 - interpolatedLocation.heading()  / 180.0 * M_PI, Eigen::Vector3d::UnitZ());

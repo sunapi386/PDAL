@@ -45,7 +45,7 @@ timespec DoubleToTimespec(const double double_time)
                                 (double_time - static_cast<double>(timespec_time.tv_sec)) * 1e9);
     return timespec_time;
 }
-//void printLidarPC(PointCloud &pc) {
+//void printLidarPC(PointCloudRef pc) {
 //  uint count = 0;
 //  std::cout << "idx, x, y, z, intensity, timestamp, laser_id, lidar_angle\n";
 //  for (LidarPoint p : pc) {
@@ -59,22 +59,22 @@ timespec DoubleToTimespec(const double double_time)
 //  }
 //}
 
-void writePCTextFile(PointCloud &pc, std::string &name)
+void savePCToCSV(PointCloudRef pc, std::string &name)
 {
     // todo: save the points into PDAL acceptable format
-    std::ofstream outfile(name);
+    std::ofstream outfile(name + ".csv");
     outfile << "idx, x, y, z, intensity, timestamp, laser_id, lidar_angle\n";
 
     for (uint i = 0; i < pc.size(); ++i)
     {
-        LidarPoint &p = pc[i];
+        LidarPointRef p = pc[i];
         outfile << std::setfill('0') << std::setw(10) << std::fixed << std::setprecision(8);
         outfile << i << ", " << p.x << ", " << p.y << ", " << p.z << ", ";
         outfile << std::setfill('0') << std::setw(7) << std::fixed << std::setprecision(8)
                 << unsigned(p.intensity) << ", "
                 << TimespecToString(DoubleToTimespec(p.timestamp)) << ", ";
-        outfile << std::setfill('0') << std::setw(6) << std::fixed << std::setprecision(3)
-                << unsigned(p.laser_id) << ", " << unsigned(p.lidar_angle) << "\n";
+        outfile << std::setfill('0') << std::setw(6) << std::fixed << std::setprecision(5)
+                << unsigned(p.laser_id) << ", " << p.lidar_angle << "\n";
     }
     outfile.close();
 }
@@ -127,10 +127,17 @@ double deg2rad(double deg)
     return (deg * M_PI / 180);
 }
 
+double constrainAngle(double x){
+  x = fmod(x,360);
+  if (x < 0)
+    x += 360;
+  return x;
+}
+
 //  This function converts radians to decimal degrees
 double rad2deg(double rad)
 {
-    return (rad * 180 / M_PI);
+    return constrainAngle(rad * 180 / M_PI);
 }
 
 /**
@@ -172,7 +179,7 @@ std::string preciseDoubleStr(double d, uint precision)
     return stream.str();
 }
 
-double radiansFromCoord(LidarPoint &lidarPoint)
+double radiansFromCoord(LidarPointRef lidarPoint)
 {
     double theta = /*-*/std::atan2(lidarPoint.y, lidarPoint.x);
     return theta;

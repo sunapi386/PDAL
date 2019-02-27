@@ -42,11 +42,13 @@ struct LidarPoint
     uint8_t intensity = 0;    // 0-255
     double timestamp = 0;     // always 0, interpolated
     uint8_t laser_id = 0;     // which beam id (0-127)
-    uint16_t lidar_angle = 0; // always 49780 (unused)
+    double lidar_angle = 0;   // always 49780 (unused)
 };
 
 
 typedef std::vector<LidarPoint> PointCloud;
+typedef PointCloud& PointCloudRef;
+typedef LidarPoint& LidarPointRef;
 
 struct TimePlace
 {
@@ -80,14 +82,14 @@ PointCloud getLidarPoints(bf::Datum &datum);
 std::string TimespecToString(const timespec &timestamp, bool useDash = false);
 double TimespecToDouble(const timespec& timestamp);
 timespec DoubleToTimespec(const double double_time);
-//void printLidarPC(PointCloud &pc);
+//void printLidarPC(PointCloudRef pc);
 
 /*!
  * Dump the point cloud into CSV text
  * @param pc
  * @param name
  */
-void writePCTextFile(PointCloud &pc, std::string &name);
+void savePCToCSV(PointCloudRef pc, std::string &name);
 
 
 Eigen::Affine3d readAffineFromJson(Json::Value &root);
@@ -104,4 +106,6 @@ std::string preciseDoubleStr(double d, uint precision);
  * @param lidarPoint
  * @return 2D x-y radians to rotate
  */
-double radiansFromCoord(LidarPoint &lidarPoint);
+double radiansFromCoord(LidarPointRef lidarPoint);
+double rad2deg(double rad);
+double deg2rad(double deg);
