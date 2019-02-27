@@ -189,7 +189,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             mutatePC_doMotionCompensation(pointCloud);
         }
         mutatePC_referenceFromLidarToRTK(pointCloud);
-        mutatePC_referenceFromRtkToUTM(pointCloud, lastUsedRtkMsg);
+        mutatePC_referenceFromRtkToUTM(pointCloud);
 
         if (m_args.dumpFrames)
         {
@@ -345,9 +345,9 @@ void BFReader::affineSinglePoint(LidarPointRef pt, Eigen::Affine3d &affine)
 
 
 
-void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud, msg::RTKMessage &rtkMsg)
+void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
 {
-
+    msg::RTKMessage rtkMsg = cloud.timePlaceSegment.start.rtkMessage;
     // convert to UTM, don't touch the altitude
     int utmZone;
     bool utmNorth;

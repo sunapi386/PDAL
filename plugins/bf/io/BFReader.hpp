@@ -71,7 +71,7 @@ private:
     uint insertRtkDatumsIntoInterpolator(bf::DatumParser &parser);
 
     void mutatePC_referenceFromLidarToRTK(PointCloudRef inPc);
-    void mutatePC_referenceFromRtkToUTM(PointCloudRef cloud, msg::RTKMessage &rtkMsg);
+    void mutatePC_referenceFromRtkToUTM(PointCloudRef cloud);
 
     void affineSinglePoint(LidarPointRef point, Eigen::Affine3d &affine);
 
