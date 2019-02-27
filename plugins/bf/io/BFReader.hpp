@@ -95,5 +95,7 @@ private:
     void mutatePC_doMotionCompensation(PointCloud &cloud);
 
     void mutatePC_addInterpolatedTimeEachPointToPC(PointCloud &cloud);
+
+    PointCloud getSingleLidarPoint(bf::Datum &datum);
 };
 }

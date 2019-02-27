@@ -374,14 +374,14 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
 
     Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
 //    affine3d.translation() = Eigen::Vector3d(rtkMsg.latitude(), rtkMsg.longitude(), utmZ);
-    affine3d.translation() = Eigen::Vector3d(utmX, utmY, utmZ);
-//    affine3d.translation() = Eigen::Vector3d(utmX - m_rtkFirstUtmX, utmY - m_rtkFirstUtmY, utmZ);
+//    affine3d.translation() = Eigen::Vector3d(utmX, utmY, utmZ);
+    affine3d.translation() = Eigen::Vector3d(utmX - m_rtkFirstUtmX, utmY - m_rtkFirstUtmY, utmZ);
 
-    double roll = rtkMsg.roll() / 180.0 * M_PI;
+    double roll = deg2rad(rtkMsg.roll());
     Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
-    double pitch = rtkMsg.pitch() / 180.0 * M_PI;
+    double pitch = deg2rad(rtkMsg.pitch());
     Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
-    double yaw = M_PI / 2 - rtkMsg.heading() / 180.0 * M_PI;
+    double yaw = M_PI / 2 - deg2rad(rtkMsg.heading());
     Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
     Eigen::Quaternion<double> quaternion =  yawAngle * rollAngle * pitchAngle;
     affine3d.linear() = quaternion.matrix();
@@ -466,6 +466,15 @@ struct BFLidarPointSerialized
 };
 
 
+PointCloud BFReader::getSingleLidarPoint(bf::Datum &datum) {
+  PointCloud pointCloud = getLidarPoints(datum);
+  LidarPoint singleLidarPoint = pointCloud.points.front();
+  pointCloud.points.clear();
+  pointCloud.points.emplace_back(singleLidarPoint);
+  return pointCloud;
+}
+
+
 PointCloud BFReader::getLidarPoints(bf::Datum &datum)
 {
     size_t point_num = datum.size / sizeof(BFLidarPointSerialized);
@@ -480,7 +489,7 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
     for (size_t i = 0; i < readPoints.size(); i++)
     {
         BFLidarPointSerialized &readPoint = readPoints[i];
-        if (i % 10 != 0) {
+        if (i % 2 != 0) {
             continue; // todo: remove me for artifically skinnying down the data
         }
         // converts to a Lidar Point which uses doubles
