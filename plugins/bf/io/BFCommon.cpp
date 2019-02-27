@@ -4,13 +4,6 @@
 
 #include "BFCommon.hpp"
 
-PointCloud getLidarPoints(bf::Datum &datum)
-{
-    size_t point_num = datum.size / sizeof(LidarPoint);
-    const LidarPoint *data_ptr = static_cast<LidarPoint *>(datum.data);
-    return std::vector<LidarPoint>(data_ptr, data_ptr + point_num);
-}
-
 std::string rtkToString(msg::RTKMessage &rtkMessage)
 {
     std::stringstream sstream;
@@ -65,9 +58,9 @@ void savePCToCSV(PointCloudRef pc, std::string &name)
     std::ofstream outfile(name + ".csv");
     outfile << "idx, x, y, z, intensity, timestamp, laser_id, lidar_angle\n";
 
-    for (uint i = 0; i < pc.size(); ++i)
+    for (uint i = 0; i < pc.points.size(); ++i)
     {
-        LidarPointRef p = pc[i];
+        LidarPointRef p = pc.points[i];
         outfile << std::setfill('0') << std::setw(10) << std::fixed << std::setprecision(8);
         outfile << i << ", " << p.x << ", " << p.y << ", " << p.z << ", ";
         outfile << std::setfill('0') << std::setw(7) << std::fixed << std::setprecision(8)
@@ -117,7 +110,6 @@ bool jsonValueFromFile(std::string &filename, Json::Value &root)
     return parseSuccess;
 }
 
-#include <math.h>
 #include <cmath>
 #define earthRadiusKm 6371.0
 
@@ -127,11 +119,12 @@ double deg2rad(double deg)
     return (deg * M_PI / 180);
 }
 
-double constrainAngle(double x){
-  x = fmod(x,360);
-  if (x < 0)
-    x += 360;
-  return x;
+double constrainAngle(double x)
+{
+    x = fmod(x,360);
+    if (x < 0)
+        x += 360;
+    return x;
 }
 
 //  This function converts radians to decimal degrees
@@ -179,8 +172,8 @@ std::string preciseDoubleStr(double d, uint precision)
     return stream.str();
 }
 
-double radiansFromCoord(LidarPointRef lidarPoint)
+double radiansFromCoord(double y, double x)
 {
-    double theta = /*-*/std::atan2(lidarPoint.y, lidarPoint.x);
+    double theta = -std::atan2(y, x);
     return theta;
 }

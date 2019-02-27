@@ -32,23 +32,19 @@ std::unique_ptr<T> make_unique(Args&&... args)
 }
 
 /*!
- * Copied from BF messages
+ * Similar as BF messages BFLidarPointSerialized but different in using doubles
  */
 struct LidarPoint
 {
-    float x = 0;              // metres
-    float y = 0;              // from
-    float z = 0;              // lidar origin (0,0,0)
-    uint8_t intensity = 0;    // 0-255
-    double timestamp = 0;     // always 0, interpolated
-    uint8_t laser_id = 0;     // which beam id (0-127)
-    double lidar_angle = 0;   // always 49780 (unused)
+    double x = 0;
+    double y = 0;
+    double z = 0;
+    uint8_t intensity = 0;
+    double timestamp = 0;
+    uint8_t laser_id = 0;
+    double lidar_angle = 0; // since we're not using this I can calculate it
 };
 
-
-typedef std::vector<LidarPoint> PointCloud;
-typedef PointCloud& PointCloudRef;
-typedef LidarPoint& LidarPointRef;
 
 struct TimePlace
 {
@@ -69,6 +65,7 @@ struct TimePlace
 struct TimePlaceSegment
 {
     TimePlace start, finish;
+    TimePlaceSegment() {}
     TimePlaceSegment(TimePlace &start_, TimePlace &finish_)
     {
         start = std::move(start_);
@@ -77,11 +74,19 @@ struct TimePlaceSegment
 };
 
 
-PointCloud getLidarPoints(bf::Datum &datum);
+struct PointCloud
+{
+    std::vector<LidarPoint> points;
+    TimePlaceSegment timePlaceSegment;
+};
+
+typedef std::vector<LidarPoint> LidarPointVector;
+typedef PointCloud& PointCloudRef;
+typedef LidarPoint& LidarPointRef;
 
 std::string TimespecToString(const timespec &timestamp, bool useDash = false);
 double TimespecToDouble(const timespec& timestamp);
-timespec DoubleToTimespec(const double double_time);
+timespec DoubleToTimespec(double double_time);
 //void printLidarPC(PointCloudRef pc);
 
 /*!
@@ -106,6 +111,6 @@ std::string preciseDoubleStr(double d, uint precision);
  * @param lidarPoint
  * @return 2D x-y radians to rotate
  */
-double radiansFromCoord(LidarPointRef lidarPoint);
+double radiansFromCoord(double y, double x);
 double rad2deg(double rad);
 double deg2rad(double deg);

@@ -138,6 +138,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     // this of course assumes the capture frequency are same
     // i.e. both captured at 10Hz.
     msg::RTKMessage lastUsedRtkMsg;
+    log()->get(LogLevel::Info) << "Motion compensation is " << (m_args.mCompensate ? "Disabled" : "Enabled") << "\n";
 
     while (nPtsRead < nPtsToRead &&
             nBFDatumsRead < m_args.nFramesRead &&
@@ -153,9 +154,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         free(datumLidar.data);
         // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
         // approx. 200k points in a datum for 128 beam lidar
-
-
-        TimePlaceSegment segment = interpolateTimePlaceSegment(datumLidar);
+        auto segment = pointCloud.timePlaceSegment;
 
         double distTravelledDuringScan = distanceMeters(segment.start.rtkMessage, segment.finish.rtkMessage);
         log()->get(LogLevel::Debug) << "RTK travelled "
@@ -186,8 +185,8 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
          */
         if (m_args.mCompensate)
         {
-            mutatePC_addInterpolatedTimeEachPointToPC(segment, pointCloud);
-            mutatePC_doMotionCompensation(segment, pointCloud);
+            mutatePC_addInterpolatedTimeEachPointToPC(pointCloud);
+            mutatePC_doMotionCompensation(pointCloud);
         }
         mutatePC_referenceFromLidarToRTK(pointCloud);
         mutatePC_referenceFromRtkToUTM(pointCloud, lastUsedRtkMsg);
@@ -202,7 +201,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
 
 
         // the values we read and put them into the PointView object
-        for (LidarPointRef pt : pointCloud)
+        for (LidarPointRef pt : pointCloud.points)
         {
             view->setField(Dimension::Id::X, nextId, pt.x);
             view->setField(Dimension::Id::Y, nextId, pt.y);
@@ -329,7 +328,7 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
 void BFReader::mutatePC_referenceFromLidarToRTK(PointCloudRef pcIn)
 {
     // for every point, apply a transform from the affine matrix
-    for (LidarPointRef pt : pcIn)
+    for (LidarPointRef pt : pcIn.points)
     {
         affineSinglePoint(pt, m_affine);
     }
@@ -338,7 +337,7 @@ void BFReader::mutatePC_referenceFromLidarToRTK(PointCloudRef pcIn)
 void BFReader::affineSinglePoint(LidarPointRef pt, Eigen::Affine3d &affine)
 {
     Eigen::Vector3d pt3d(pt.x, pt.y, pt.z);
-    pt3d = affine * pt3d.eval();
+    pt3d = affine * pt3d;
     pt.x = pt3d[0];
     pt.y = pt3d[1];
     pt.z = pt3d[2];
@@ -346,7 +345,7 @@ void BFReader::affineSinglePoint(LidarPointRef pt, Eigen::Affine3d &affine)
 
 
 
-void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef pc, msg::RTKMessage &rtkMsg)
+void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud, msg::RTKMessage &rtkMsg)
 {
 
     // convert to UTM, don't touch the altitude
@@ -374,15 +373,27 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef pc, msg::RTKMessage 
     }
 
     Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
-    affine3d.translation() = Eigen::Vector3d(utmX - m_rtkFirstUtmX, utmY - m_rtkFirstUtmY, utmZ);
-    Eigen::AngleAxisd rollAngle(rtkMsg.roll() / 180.0 * M_PI, Eigen::Vector3d::UnitX());
-    Eigen::AngleAxisd pitchAngle(rtkMsg.pitch() / 180.0 * M_PI, Eigen::Vector3d::UnitY());
-    Eigen::AngleAxisd yawAngle(M_PI / 2 - rtkMsg.heading()  / 180.0 * M_PI, Eigen::Vector3d::UnitZ());
+//    affine3d.translation() = Eigen::Vector3d(rtkMsg.latitude(), rtkMsg.longitude(), utmZ);
+    affine3d.translation() = Eigen::Vector3d(utmX, utmY, utmZ);
+//    affine3d.translation() = Eigen::Vector3d(utmX - m_rtkFirstUtmX, utmY - m_rtkFirstUtmY, utmZ);
+
+    double roll = rtkMsg.roll() / 180.0 * M_PI;
+    Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
+    double pitch = rtkMsg.pitch() / 180.0 * M_PI;
+    Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
+    double yaw = M_PI / 2 - rtkMsg.heading() / 180.0 * M_PI;
+    Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
     Eigen::Quaternion<double> quaternion =  yawAngle * rollAngle * pitchAngle;
     affine3d.linear() = quaternion.matrix();
 
+    log()->get(LogLevel::Debug) << "translation=" << utmX << ", " << utmY << ", " << utmZ << "\n";
+    log()->get(LogLevel::Debug) << "translation=" << affine3d.translation() << "\n";
+    log()->get(LogLevel::Debug) << "roll=" << roll << "\n";
+    log()->get(LogLevel::Debug) << "pitch=" << pitch << "\n";
+    log()->get(LogLevel::Debug) << "yaw=" << yaw << "\n";
+    log()->get(LogLevel::Debug) << "affine=\n" << affine3d.matrix() << "\n";
 
-    for (auto &pt : pc)
+    for (LidarPointRef pt : cloud.points)
     {
         affineSinglePoint(pt, affine3d);
     }
@@ -393,26 +404,24 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef pc, msg::RTKMessage 
  * @param segment
  * @param cloud
  */
-void BFReader::mutatePC_addInterpolatedTimeEachPointToPC(TimePlaceSegment &segment, PointCloudRef cloud)
+void BFReader::mutatePC_addInterpolatedTimeEachPointToPC(PointCloudRef cloud)
 {
+    auto segment = cloud.timePlaceSegment;
     double startTime = TimespecToDouble(segment.start.time);
     double finishTime = TimespecToDouble(segment.finish.time);
     double travelTimeSeconds = finishTime - startTime;
     double radiansPerSecond = 2 * M_PI / travelTimeSeconds;
-    double startTheta = radiansFromCoord(cloud.front());
-    for (LidarPointRef pt : cloud)
+    for (LidarPointRef pt : cloud.points)
     {
-        double radiansFromStart = radiansFromCoord(pt) - startTheta;
-        double secondsToRotateToTheta = radiansFromStart / radiansPerSecond;
+        double secondsToRotateToTheta = pt.lidar_angle / radiansPerSecond;
         pt.timestamp = startTime + secondsToRotateToTheta;
-        pt.lidar_angle = rad2deg(radiansFromStart);
     }
 }
 
-void BFReader::mutatePC_doMotionCompensation(TimePlaceSegment &segment, PointCloudRef cloud)
+void BFReader::mutatePC_doMotionCompensation(PointCloudRef cloud)
 {
     // todo: fix efficiency?
-    for (LidarPointRef point : cloud)
+    for (LidarPointRef point : cloud.points)
     {
         compensatePoint(point);
     }
@@ -439,6 +448,57 @@ void BFReader::compensatePoint(LidarPointRef point)
     affine3d.linear() = quaternion.matrix();
 
     affineSinglePoint(point, affine3d);
+}
+
+
+/*!
+ * Copied from BF messages
+ */
+struct BFLidarPointSerialized
+{
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    uint8_t intensity = 0;
+    double timestamp = 0;
+    uint8_t laser_id = 0;
+    uint16_t lidar_angle = 0;
+};
+
+
+PointCloud BFReader::getLidarPoints(bf::Datum &datum)
+{
+    size_t point_num = datum.size / sizeof(BFLidarPointSerialized);
+    const BFLidarPointSerialized *data_ptr = static_cast<BFLidarPointSerialized *>(datum.data);
+    auto readPoints = std::vector<BFLidarPointSerialized>(data_ptr, data_ptr + point_num);
+    auto outPoints = std::vector<LidarPoint>();
+    outPoints.reserve(readPoints.size());
+    double y = readPoints.front().y;
+    double x = readPoints.front().x;
+    double startTheta = radiansFromCoord(y, x);
+
+    for (size_t i = 0; i < readPoints.size(); i++)
+    {
+        BFLidarPointSerialized &readPoint = readPoints[i];
+        if (i % 10 != 0) {
+            continue; // todo: remove me for artifically skinnying down the data
+        }
+        // converts to a Lidar Point which uses doubles
+        LidarPoint writePoint;
+        writePoint.x = readPoint.x;
+        writePoint.y = readPoint.y;
+        writePoint.z = readPoint.z;
+        writePoint.intensity = readPoint.intensity;
+        writePoint.timestamp = TimespecToDouble(datum.time);
+        double radiansFromStart = radiansFromCoord(readPoint.y, readPoint.x) - startTheta;
+        writePoint.lidar_angle = rad2deg(radiansFromStart);
+        writePoint.laser_id = readPoint.laser_id;
+        outPoints.emplace_back(writePoint);
+    }
+    PointCloud pointCloud;
+    pointCloud.points = std::move(outPoints);
+    pointCloud.timePlaceSegment = interpolateTimePlaceSegment(datum);
+    return pointCloud;
 }
 
 
