@@ -73,7 +73,7 @@ private:
     void mutatePC_referenceFromLidarToRTK(PointCloudRef inPc);
     void mutatePC_referenceFromRtkToUTM(PointCloudRef cloud);
 
-    void affineSinglePoint(LidarPointRef point, Eigen::Affine3d &affine);
+    void affineSinglePoint(LidarPointRef point, const Eigen::Affine3d &affine);
 
     /*!
      * We need to interpolate the travelled distance during that one lidar
@@ -94,8 +94,8 @@ private:
 
     void mutatePC_doMotionCompensation(PointCloud &cloud);
 
-    void mutatePC_addInterpolatedTimeEachPointToPC(PointCloud &cloud);
-
     PointCloud fakeLidarPoint(bf::Datum &datum);
+
+    Eigen::Affine3d createAffineFromRtkMessage(msg::RTKMessage &rtkMessage);
 };
 }
