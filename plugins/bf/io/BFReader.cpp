@@ -34,6 +34,7 @@ void BFReader::addArgs(ProgramArgs& args)
     args.add("nPointsReadLimit", "Debug: Limit the number of points in a frames to read", m_args.nPointsReadLimit);
     args.add("mDistanceJump", "Distance to wait until car moves", m_args.mDistanceJump);
     args.add("motionCompensate", "Perform motion compensation", m_args.mCompensate);
+    args.add("mLidarDistanceReturnFilter", "Filter out lidar points that are this meters away", m_args.mLidarDistanceReturnFilter);
 }
 
 void BFReader::initialize()
@@ -402,11 +403,14 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
     msg::RTKMessage &rtkMsgFinish = cloud.timePlaceSegment.finish.rtkMessage;
     log()->get(LogLevel::Debug) << "mutatePC_referenceFromRtkToUTM.rtkMsg=" << rtkMsgStart.longitude() << ", " << rtkMsgStart.latitude() << ", " << rtkMsgStart.altitude() << " H:" << rtkMsgStart.heading() << "\n";
 
-//    const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
+    const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
     const Eigen::Affine3d &affineFromRtkMessageFinish = createAffineFromRtkMessage(rtkMsgFinish);
 
+    uint counter = 0;
     for (LidarPointRef pt : cloud.points)
     {
+        // todo: fix this
+//        affineSinglePoint(pt, affineFromRtkMessageStart);
         affineSinglePoint(pt, affineFromRtkMessageFinish);
     }
 }
@@ -536,6 +540,13 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
             break;
         }
         BFLidarPointSerialized &readPoint = readPoints[i];
+
+        float distance = std::hypot(readPoint.x, readPoint.y);
+        if (m_args.mLidarDistanceReturnFilter >= 0 && distance > m_args.mLidarDistanceReturnFilter)
+        {
+            // lidar point is too far, we drop it
+            continue;
+        }
 //        if (i % 1 != 0)
 //        {
 //            continue; // todo: remove me for artifically skinnying down the data

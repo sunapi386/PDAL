@@ -23,7 +23,8 @@ struct BFArgs
     int nFramesRead;
     double mDistanceJump;
     bool mCompensate = true;
-    int nPointsReadLimit = -1; // if negative, we ignore this
+    int nPointsReadLimit = -1; // ignore if negative
+    double mLidarDistanceReturnFilter = -1; // ignore if negative
 };
 
 template<typename T, typename... Args>

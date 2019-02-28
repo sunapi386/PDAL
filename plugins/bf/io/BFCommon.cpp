@@ -86,6 +86,7 @@ BFArgs readArgsFromJson(Json::Value &root)
     args.mDistanceJump = root.get("mDistanceJump", false).asDouble();
     args.mCompensate = root.get("mCompensate", false).asBool();
     args.nPointsReadLimit = root.get("nPointsReadLimit", -1).asInt();
+    args.mLidarDistanceReturnFilter = root.get("mLidarDistanceReturnFilter", -1.0).asDouble();
     return args;
 }
 
