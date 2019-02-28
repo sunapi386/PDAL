@@ -96,6 +96,6 @@ private:
 
     void mutatePC_addInterpolatedTimeEachPointToPC(PointCloud &cloud);
 
-    PointCloud fakeSingleLidarPoint(bf::Datum &datum);
+    PointCloud fakeLidarPoint(bf::Datum &datum);
 };
 }

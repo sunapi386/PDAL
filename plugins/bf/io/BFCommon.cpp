@@ -85,6 +85,7 @@ BFArgs readArgsFromJson(Json::Value &root)
     args.nFramesRead = root.get("nFramesRead", false).asInt();
     args.mDistanceJump = root.get("mDistanceJump", false).asDouble();
     args.mCompensate = root.get("mCompensate", false).asBool();
+    args.nPointsReadLimit = root.get("nPointsReadLimit", -1).asInt();
     return args;
 }
 

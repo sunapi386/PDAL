@@ -31,6 +31,7 @@ void BFReader::addArgs(ProgramArgs& args)
     args.add("dumpFrames", "Bool flag to dump lidar csv", m_args.dumpFrames);
     args.add("nFramesSkip", "Number of BF frames to skip", m_args.nFramesSkip);
     args.add("nFramesRead", "Number of BF frames to read", m_args.nFramesRead);
+    args.add("nPointsReadLimit", "Debug: Limit the number of points in a frames to read", m_args.nPointsReadLimit);
     args.add("mDistanceJump", "Distance to wait until car moves", m_args.mDistanceJump);
     args.add("motionCompensate", "Perform motion compensation", m_args.mCompensate);
 }
@@ -55,6 +56,7 @@ void BFReader::initialize()
         log()->get(LogLevel::Debug) << "-dumpFrames=" << m_args.dumpFrames << "\n";
         log()->get(LogLevel::Debug) << "-nFramesSkip=" << m_args.nFramesSkip << "\n";
         log()->get(LogLevel::Debug) << "-nFramesRead=" << m_args.nFramesRead << "\n";
+        log()->get(LogLevel::Debug) << "-nPointsReadLimit=" << m_args.nPointsReadLimit << "\n";
 
         // handle rtk file
         bf::DatumParser rtkDatumParser(m_args.fileRtk);
@@ -150,8 +152,8 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             free(datumLidar.data);
             continue;
         }
-        auto pointCloud = fakeSingleLidarPoint(datumLidar);
-//        auto pointCloud = getLidarPoints(datumLidar);
+//        auto pointCloud = fakeLidarPoint(datumLidar);
+        auto pointCloud = getLidarPoints(datumLidar);
 
         free(datumLidar.data);
         // timestamp is not recorded in the lidar readings and the lidar_angle isn't used
@@ -468,35 +470,52 @@ struct BFLidarPointSerialized
 };
 
 
-PointCloud BFReader::fakeSingleLidarPoint(bf::Datum &datum)
+PointCloud BFReader::fakeLidarPoint(bf::Datum &datum)
 {
     PointCloud pointCloud = getLidarPoints(datum);
     LidarPoint &point = pointCloud.points.front();
 
-    LidarPoint xLidarPoint = point, yLidarPoint = point, zLidarPoint = point, lidarPoint = point;
+  double latitude = pointCloud.timePlaceSegment.start.rtkMessage.latitude();
+  double longitude = pointCloud.timePlaceSegment.start.rtkMessage.longitude();
+  double altitude = pointCloud.timePlaceSegment.start.rtkMessage.altitude();
 
-    lidarPoint.x = 0;
-    lidarPoint.y = 0;
-    lidarPoint.z = 0;
+  LidarPoint pt = point;
 
-    xLidarPoint.x = 1;
-    xLidarPoint.y = 0;
-    xLidarPoint.z = 0;
-
-    yLidarPoint.x = 0;
-    yLidarPoint.y = 1;
-    yLidarPoint.z = 0;
-
-    zLidarPoint.x = 0;
-    zLidarPoint.y = 0;
-    zLidarPoint.z = 1;
-
+    pt.x = 0;
+    pt.y = 0;
+    pt.z = 0;
     pointCloud.points.clear();
-    pointCloud.points.emplace_back(lidarPoint);
-    pointCloud.points.emplace_back(xLidarPoint);
-    pointCloud.points.emplace_back(yLidarPoint);
-    pointCloud.points.emplace_back(zLidarPoint);
-    return pointCloud;
+    pointCloud.points.emplace_back(pt);
+
+
+//{
+//    LidarPoint xLidarPoint = point, yLidarPoint = point, zLidarPoint = point, lidarPoint = point;
+//
+//    lidarPoint.x = 0;
+//    lidarPoint.y = 0;
+//    lidarPoint.z = 0;
+//
+//    xLidarPoint.x = 1;
+//    xLidarPoint.y = 0;
+//    xLidarPoint.z = 0;
+//
+//    yLidarPoint.x = 0;
+//    yLidarPoint.y = 1;
+//    yLidarPoint.z = 0;
+//
+//    zLidarPoint.x = 0;
+//    zLidarPoint.y = 0;
+//    zLidarPoint.z = 1;
+//
+//    pointCloud.points.clear();
+//    pointCloud.points.emplace_back(lidarPoint);
+//    pointCloud.points.emplace_back(xLidarPoint);
+//    pointCloud.points.emplace_back(yLidarPoint);
+//    pointCloud.points.emplace_back(zLidarPoint);
+//}
+
+
+  return pointCloud;
 }
 
 
@@ -513,6 +532,10 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
 
     for (size_t i = 0; i < readPoints.size(); i++)
     {
+        if (m_args.nPointsReadLimit > 0 && i == unsigned(m_args.nPointsReadLimit)) {
+            // stop reading points when we've got enough (nPointsReadLimit)
+            break;
+        }
         BFLidarPointSerialized &readPoint = readPoints[i];
 //        if (i % 1 != 0)
 //        {

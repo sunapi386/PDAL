@@ -23,6 +23,7 @@ struct BFArgs
     int nFramesRead;
     double mDistanceJump;
     bool mCompensate = true;
+    int nPointsReadLimit = -1; // if negative, we ignore this
 };
 
 template<typename T, typename... Args>
