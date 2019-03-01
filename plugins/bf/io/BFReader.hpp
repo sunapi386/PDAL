@@ -50,7 +50,8 @@ private:
 
     // the affine is small
     Eigen::Affine3d m_affine;
-    double m_rtkFirstUtmX = 0, m_rtkFirstUtmY = 0;
+    double m_rtkFirstUtmEasting = 0, m_rtkFirstUtmNorthing = 0;
+    msg::RTKMessage m_rtkFirst;
     int precision = std::numeric_limits<double>::max_digits10;
 
 
