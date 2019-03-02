@@ -363,7 +363,7 @@ Eigen::Affine3d BFReader::createAffineFromRtkMessage(msg::RTKMessage &rtkMessage
     Eigen::AngleAxisd yawAngle(heading, Eigen::Vector3d::UnitZ());
     Eigen::Quaternion<double> quaternion =  yawAngle * pitchAngle * rollAngle;
     affine3d.linear() = quaternion.matrix();
-    {
+    /*{
         log()->get(LogLevel::Debug) << "lat=" << rtkMessage.latitude() << ", lng=" << rtkMessage.longitude() << "\n";
 //        log()->get(LogLevel::Debug) << "metersX=" << metersX << ", metersY=" << metersY << "\n";
         log()->get(LogLevel::Debug) << "utmZone=" << utmZone << ", utmNorth=" << utmNorth << "\n";
@@ -373,7 +373,7 @@ Eigen::Affine3d BFReader::createAffineFromRtkMessage(msg::RTKMessage &rtkMessage
         log()->get(LogLevel::Debug) << "pitch=" << pitch  << "(" << rtkMessage.pitch() << "deg)\n";
         log()->get(LogLevel::Debug) << "yaw=" << heading  << "(" << rtkMessage.heading() << "deg)\n";
         log()->get(LogLevel::Debug) << "affine=\n" << affine3d.matrix() << "\n";
-    }
+    }*/
     return affine3d;
 }
 
@@ -410,7 +410,7 @@ void BFReader::mutatePC_doMotionCompensation(PointCloudRef cloud)
 {
     for (LidarPointRef point : cloud.points)
     {
-        compensatePoint(point);
+        motionCompensatePoint(point);
     }
 }
 
@@ -418,22 +418,11 @@ void BFReader::mutatePC_doMotionCompensation(PointCloudRef cloud)
  * The reason for having a point-level compensation is we may want to do streaming for large file sizes
  * @param point
  */
-void BFReader::compensatePoint(LidarPointRef point)
+void BFReader::motionCompensatePoint(LidarPointRef point)
 {
     msg::RTKMessage interpolatedLocation;
     m_rtkInterpolator.GetTimedData(DoubleToTimespec(point.timestamp), &interpolatedLocation);
-
-    Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
-    affine3d.translation() = Eigen::Vector3d(interpolatedLocation.longitude(),
-                             interpolatedLocation.latitude(),
-                             interpolatedLocation.altitude());
-
-    Eigen::AngleAxisd rollAngle(deg2rad(interpolatedLocation.roll()), Eigen::Vector3d::UnitX());
-    Eigen::AngleAxisd pitchAngle(deg2rad(interpolatedLocation.pitch()), Eigen::Vector3d::UnitY());
-    Eigen::AngleAxisd yawAngle(M_PI / 2 - deg2rad(interpolatedLocation.heading()), Eigen::Vector3d::UnitZ());
-    Eigen::Quaternion<double> quaternion =  yawAngle * rollAngle * pitchAngle;
-    affine3d.linear() = quaternion.matrix();
-
+    Eigen::Affine3d affine3d = createAffineFromRtkMessage(interpolatedLocation);
     affineSinglePoint(point, affine3d);
 }
 

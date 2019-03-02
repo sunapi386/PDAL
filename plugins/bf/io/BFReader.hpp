@@ -89,7 +89,7 @@ private:
      * @param segment
      * @param cloud
      */
-    void compensatePoint(LidarPointRef point);
+    void motionCompensatePoint(LidarPointRef point);
 
     PointCloud getLidarPoints(bf::Datum &datum);
 
