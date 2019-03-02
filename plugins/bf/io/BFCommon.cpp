@@ -9,9 +9,12 @@ std::string rtkToString(msg::RTKMessage &rtkMessage)
     std::stringstream sstream;
     int precision = std::numeric_limits<double>::max_digits10;
     sstream << std::setprecision(precision);
-    sstream << rtkMessage.longitude();
-    sstream << "-";
-    sstream << rtkMessage.latitude();
+    sstream << "latitude:" << rtkMessage.latitude() << " ";
+    sstream << "longitude:" << rtkMessage.longitude() << " ";
+    sstream << "altitude:" << rtkMessage.altitude() << " ";
+    sstream << "heading:" << rtkMessage.heading() << " ";
+    sstream << "roll:" << rtkMessage.roll() << " ";
+    sstream << "pitch:" << rtkMessage.pitch();
     return sstream.str();
 }
 
@@ -26,8 +29,7 @@ std::string TimespecToString(const timespec &timestamp, bool useDash)
 
 double TimespecToDouble(const timespec& timestamp)
 {
-    return static_cast<double>(timestamp.tv_sec) +
-           static_cast<double>(timestamp.tv_nsec) / 1e9;
+    return timestamp.tv_sec + double(timestamp.tv_nsec) / 1e9;
 }
 
 timespec DoubleToTimespec(const double double_time)

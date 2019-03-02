@@ -222,6 +222,9 @@ TimePlaceSegment BFReader::interpolateTimePlaceSegment(const bf::Datum &datumLid
     timespec timespecFinish= DoubleToTimespec(TimespecToDouble(datumLidar.time) + 0.1);
     m_rtkInterpolator.GetTimedData(timespecStart, &interpolatedScanStartRtkMsg);
     m_rtkInterpolator.GetTimedData(timespecFinish, &interpolatedScanFinishRtkMsg);
+    log()->get(LogLevel::Debug) << TimespecToDouble(timespecStart) << " interpolatedScanFinishRtkMsg=" << rtkToString(interpolatedScanStartRtkMsg) << "\n";
+    log()->get(LogLevel::Debug) << TimespecToDouble(timespecFinish) << " interpolatedScanFinishRtkMsg=" << rtkToString(interpolatedScanFinishRtkMsg) << "\n";
+
     TimePlace start = TimePlace(interpolatedScanStartRtkMsg, timespecStart);
     TimePlace finish = TimePlace(interpolatedScanFinishRtkMsg, timespecFinish);
     return TimePlaceSegment(start, finish);
@@ -289,9 +292,27 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
             continue;
         }
 
+        // the interpolator expects headings to be radians so do conversion here
+        rtkMessage.set_heading(deg2rad(rtkMessage.heading()));
         m_rtkInterpolator.InsertNewData(timespec, rtkMessage, false);
+
+        if (count == 0)
+        {
+            int utmZone;
+            bool utmNorth;
+            double utmMetersEasting, utmMetersNorthing;
+            double utmZ = rtkMessage.altitude();
+            GeographicLib::UTMUPS::Forward(rtkMessage.latitude(), rtkMessage.longitude(), utmZone, utmNorth, utmMetersEasting, utmMetersNorthing);
+            log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmX=" << utmMetersEasting << "\n";
+            log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmY=" << utmMetersNorthing << "\n";
+            m_rtkFirstUtmEasting = utmMetersEasting;
+            m_rtkFirstUtmNorthing = utmMetersNorthing;
+        }
         count++;
     }
+
+
+
 
     return count;
 }
@@ -320,30 +341,26 @@ Eigen::Affine3d BFReader::createAffineFromRtkMessage(msg::RTKMessage &rtkMessage
     double utmMetersEasting, utmMetersNorthing;
     double utmZ = rtkMessage.altitude();
     GeographicLib::UTMUPS::Forward(rtkMessage.latitude(), rtkMessage.longitude(), utmZone, utmNorth, utmMetersEasting, utmMetersNorthing);
-    if (m_rtkFirstUtmEasting == 0 && m_rtkFirstUtmNorthing == 0)
-    {
-        log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmX=" << utmMetersEasting << "\n";
-        log()->get(LogLevel::Debug) << "m_rtkFirstFrameUtmY=" << utmMetersNorthing << "\n";
-        m_rtkFirstUtmEasting = utmMetersEasting;
-        m_rtkFirstUtmNorthing = utmMetersNorthing;
-        m_rtkFirst = rtkMessage;
-    }
+
     Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
 //    affine3d.translation() = Eigen::Vector3d(rtkMessage.latitude(), rtkMessage.longitude(), utmZ);
-    double metersX = distanceEarth(rtkMessage.latitude(), m_rtkFirst.longitude(), m_rtkFirst.latitude(), m_rtkFirst.longitude()) * 1000;
-    double metersY = distanceEarth(m_rtkFirst.latitude(), rtkMessage.longitude(), m_rtkFirst.latitude(), m_rtkFirst.longitude()) * 1000;
+//    double metersX = distanceEarth(rtkMessage.latitude(), m_rtkFirst.longitude(), m_rtkFirst.latitude(), m_rtkFirst.longitude()) * 1000;
+//    double metersY = distanceEarth(m_rtkFirst.latitude(), rtkMessage.longitude(), m_rtkFirst.latitude(), m_rtkFirst.longitude()) * 1000;
 
-    affine3d.translation() = Eigen::Vector3d(metersX, metersY, utmZ);
+//    affine3d.translation() = Eigen::Vector3d(metersX, metersY, utmZ);
 //    affine3d.translation() = Eigen::Vector3d(utmMetersEasting, utmMetersNorthing, utmZ);
 //    affine3d.translation() = Eigen::Vector3d(utmMetersNorthing, utmMetersEasting, utmZ);
-//    affine3d.translation() = Eigen::Vector3d(utmX - m_rtkFirstUtmX, utmY - m_rtkFirstUtmY, utmZ);
+    double deltaX = utmMetersEasting - m_rtkFirstUtmEasting;
+    double deltaY = utmMetersNorthing - m_rtkFirstUtmNorthing;
+    affine3d.translation() = Eigen::Vector3d(deltaX, deltaY, utmZ);
 
     double roll = deg2rad(rtkMessage.roll())- deg2rad(m_rtkFirst.roll());
     Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
     double pitch = deg2rad(rtkMessage.pitch())- deg2rad(m_rtkFirst.pitch());
     Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
-    double yaw = - deg2rad(rtkMessage.heading())- deg2rad(m_rtkFirst.heading());
-    Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
+//    double heading =  M_PI / 2 - deg2rad(rtkMessage.heading());
+    double heading =  M_PI / 2 - rtkMessage.heading(); // already in radians
+    Eigen::AngleAxisd yawAngle(heading, Eigen::Vector3d::UnitZ());
     Eigen::Quaternion<double> quaternion =  yawAngle * pitchAngle * rollAngle;
     affine3d.linear() = quaternion.matrix();
     {
@@ -354,7 +371,7 @@ Eigen::Affine3d BFReader::createAffineFromRtkMessage(msg::RTKMessage &rtkMessage
         log()->get(LogLevel::Debug) << "translation=" << affine3d.translation() << "\n";
         log()->get(LogLevel::Debug) << "roll=" << roll  << "(" << rtkMessage.roll() << "deg)\n";
         log()->get(LogLevel::Debug) << "pitch=" << pitch  << "(" << rtkMessage.pitch() << "deg)\n";
-        log()->get(LogLevel::Debug) << "yaw=" << yaw  << "(" << rtkMessage.heading() << "deg)\n";
+        log()->get(LogLevel::Debug) << "yaw=" << heading  << "(" << rtkMessage.heading() << "deg)\n";
         log()->get(LogLevel::Debug) << "affine=\n" << affine3d.matrix() << "\n";
     }
     return affine3d;
@@ -364,20 +381,22 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
 {
     msg::RTKMessage &rtkMsgStart = cloud.timePlaceSegment.start.rtkMessage;
     msg::RTKMessage &rtkMsgFinish = cloud.timePlaceSegment.finish.rtkMessage;
-    log()->get(LogLevel::Debug) << "mutatePC_referenceFromRtkToUTM.rtkMsg=" << rtkMsgStart.longitude() << ", " << rtkMsgStart.latitude() << ", " << rtkMsgStart.altitude() << " H:" << rtkMsgStart.heading() << "\n";
+    log()->get(LogLevel::Debug) << "rtkMsgStart=" << rtkToString(rtkMsgStart) << "\n";
+    log()->get(LogLevel::Debug) << "rtkMsgFinish=" << rtkToString(rtkMsgFinish) << "\n";
 
-    const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
     const Eigen::Affine3d &affineFromRtkMessageFinish = createAffineFromRtkMessage(rtkMsgFinish);
+    const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
 
-    { // doing special motion compensation doesn't seem to be the issue
-    LidarTimestampInterpolator interpolator;
-    double timespec = TimespecToDouble(cloud.timePlaceSegment.finish.time);
-    interpolator.UpdateTimestamp(0.1, utility::bf::DoubleToTimespec(timespec - 0.1), &cloud.points);
-    LidarMotionCompensator motion_compensator;
-    motion_compensator.CompensateCloudToEnd(cloud.points, affineFromRtkMessageStart,
-                                            utility::bf::DoubleToTimespec(timespec - 0.1), affineFromRtkMessageFinish,
-                                            utility::bf::DoubleToTimespec(timespec), &cloud.points);
-    }
+    /*{
+        // doing special motion compensation doesn't seem to be the issue
+        LidarTimestampInterpolator interpolator;
+        double timespec = TimespecToDouble(cloud.timePlaceSegment.finish.time);
+        interpolator.UpdateTimestamp(0.1, utility::bf::DoubleToTimespec(timespec - 0.1), &cloud.points);
+        LidarMotionCompensator motion_compensator;
+        motion_compensator.CompensateCloudToEnd(cloud.points, affineFromRtkMessageStart,
+                                                utility::bf::DoubleToTimespec(timespec - 0.1), affineFromRtkMessageFinish,
+                                                utility::bf::DoubleToTimespec(timespec), &cloud.points);
+    }*/
 
     for (LidarPointRef pt : cloud.points)
     {
