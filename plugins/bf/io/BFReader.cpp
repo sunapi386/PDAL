@@ -127,6 +127,10 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
     auto time_point = std::chrono::system_clock::now();
 
     msg::RTKMessage lastUsedRtkMsg;
+    double startTime = TimespecToDouble(m_rktDatums.front().time);
+    double endTime = TimespecToDouble(m_rktDatums[m_rktDatums.size() - 2].time);
+    // whatever reason last element of m_rktDatums has bad timestamp
+    double totalTime = endTime - startTime;
 
     while (nPtsRead < nPtsToRead &&
             nBFDatumsRead < m_args.nFramesRead &&
@@ -196,6 +200,13 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
             view->setField(Dimension::Id::PointSourceId, nextId, nBFDatumsRead);
             nPtsRead++;
             nextId++;
+        }
+
+        if (nBFDatumsRead % 10 == 0)
+        {
+            timespec &currentTime = datumLidar.time;
+            double progress = (TimespecToDouble(currentTime) - startTime) / totalTime;
+            log()->get(LogLevel::Info) << TimespecToString(currentTime) << " " << std::fixed << std::setprecision(3) << progress << "%\n";
         }
         nBFDatumsRead++;
 
@@ -277,10 +288,12 @@ bool BFReader::processOne(PointRef &point)
 uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
 {
     uint count = 0;
-    bf::Datum datum {};
-    while (parser.GetDatum(datum))
+    m_rktDatums = parser.GetAllDatums();
+    // whatever reason the m_rktDatums - 1 element has bad timestamp
+    for (uint i = 0; i < m_rktDatums.size() - 2; i++)
     {
         msg::RTKMessage rtkMessage;
+        bf::Datum &datum = m_rktDatums[i];
         timespec &timespec = datum.time;
 
         bool success = rtkMessage.ParseFromArray(datum.data, static_cast<int>(datum.size));
@@ -365,7 +378,7 @@ Eigen::Affine3d BFReader::createAffineFromRtkMessage(msg::RTKMessage &rtkMessage
     affine3d.linear() = quaternion.matrix();
     /*{
         log()->get(LogLevel::Debug) << "lat=" << rtkMessage.latitude() << ", lng=" << rtkMessage.longitude() << "\n";
-//        log()->get(LogLevel::Debug) << "metersX=" << metersX << ", metersY=" << metersY << "\n";
+    //        log()->get(LogLevel::Debug) << "metersX=" << metersX << ", metersY=" << metersY << "\n";
         log()->get(LogLevel::Debug) << "utmZone=" << utmZone << ", utmNorth=" << utmNorth << "\n";
         log()->get(LogLevel::Debug) << "utmX=" << utmMetersEasting << ", utmY=" << utmMetersNorthing << ", utmZ=" << utmZ << "\n";
         log()->get(LogLevel::Debug) << "translation=" << affine3d.translation() << "\n";
@@ -387,7 +400,7 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
     const Eigen::Affine3d &affineFromRtkMessageFinish = createAffineFromRtkMessage(rtkMsgFinish);
     const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
 
-    /*{
+    if(m_args.aoyanCompensation) {
         // doing special motion compensation doesn't seem to be the issue
         LidarTimestampInterpolator interpolator;
         double timespec = TimespecToDouble(cloud.timePlaceSegment.finish.time);
@@ -396,12 +409,10 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
         motion_compensator.CompensateCloudToEnd(cloud.points, affineFromRtkMessageStart,
                                                 utility::bf::DoubleToTimespec(timespec - 0.1), affineFromRtkMessageFinish,
                                                 utility::bf::DoubleToTimespec(timespec), &cloud.points);
-    }*/
+    }
 
     for (LidarPointRef pt : cloud.points)
     {
-        // todo: fix this
-//        affineSinglePoint(pt, affineFromRtkMessageStart);
         affineSinglePoint(pt, affineFromRtkMessageFinish);
     }
 }

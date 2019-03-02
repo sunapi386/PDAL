@@ -47,6 +47,7 @@ private:
 
     // this rtk datum file is usually small, 1-100 Mbs so we can store it in memory
     bf::RTKInterpolator m_rtkInterpolator;
+    std::vector<bf::Datum> m_rktDatums;
 
     // the affine is small
     Eigen::Affine3d m_affine;

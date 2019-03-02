@@ -21,7 +21,7 @@ std::string rtkToString(msg::RTKMessage &rtkMessage)
 std::string TimespecToString(const timespec &timestamp, bool useDash)
 {
     std::stringstream sstream;
-    sstream << std::setfill('0') << std::setw(12) << timestamp.tv_sec;
+    sstream << std::setfill('0') << std::setw(10) << timestamp.tv_sec;
     sstream << (useDash ? "-" : ".");
     sstream << std::setfill('0') << std::setw(9) << timestamp.tv_nsec;
     return sstream.str();
@@ -72,6 +72,7 @@ BFArgs readArgsFromJson(Json::Value &root)
     args.mCompensate = root.get("mCompensate", false).asBool();
     args.nPointsReadLimit = root.get("nPointsReadLimit", -1).asInt();
     args.mLidarDistanceReturnFilter = root.get("mLidarDistanceReturnFilter", -1.0).asDouble();
+    args.aoyanCompensation = root.get("aoyanCompensation", false).asBool();
     return args;
 }
 
