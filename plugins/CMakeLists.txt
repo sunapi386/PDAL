@@ -88,6 +88,10 @@ if (BUILD_PLUGIN_FBX)
     add_subdirectory(fbx)
 endif()
 
+if(BUILD_PLUGIN_TILEDB)
+    add_subdirectory(tiledb)
+endif()
+
 if(BUILD_PLUGIN_BF)
     add_subdirectory(bf)
 endif()
