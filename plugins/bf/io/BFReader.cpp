@@ -205,7 +205,7 @@ point_count_t BFReader::read(PointViewPtr view, point_count_t nPtsToRead)
         if (nBFDatumsRead % 10 == 0)
         {
             timespec &currentTime = datumLidar.time;
-            double progress = (TimespecToDouble(currentTime) - startTime) / totalTime;
+            double progress = 100 * (TimespecToDouble(currentTime) - startTime) / totalTime;
             log()->get(LogLevel::Info) << TimespecToString(currentTime) << " " << std::fixed << std::setprecision(3) << progress << "%\n";
         }
         nBFDatumsRead++;
@@ -305,8 +305,11 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
             continue;
         }
 
-        // the interpolator expects headings to be radians so do conversion here
+        // the interpolator expects novotel angles to be radians so do conversion here
+        // todo: make this parameterizable
         rtkMessage.set_heading(deg2rad(rtkMessage.heading()));
+        rtkMessage.set_roll(deg2rad(rtkMessage.roll()));
+        rtkMessage.set_pitch(deg2rad(rtkMessage.pitch()));
         m_rtkInterpolator.InsertNewData(timespec, rtkMessage, false);
 
         if (count == 0)
@@ -400,7 +403,8 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
     const Eigen::Affine3d &affineFromRtkMessageFinish = createAffineFromRtkMessage(rtkMsgFinish);
     const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
 
-    if(m_args.aoyanCompensation) {
+    if (m_args.aoyanCompensation)
+    {
         // doing special motion compensation doesn't seem to be the issue
         LidarTimestampInterpolator interpolator;
         double timespec = TimespecToDouble(cloud.timePlaceSegment.finish.time);
@@ -515,6 +519,7 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
     double y = readPoints.front().y;
     double x = readPoints.front().x;
     double startTheta = radiansFromCoord(y, x);
+    size_t nTooClosePoints = 0;
 
     for (size_t i = 0; i < readPoints.size(); i++)
     {
@@ -531,6 +536,12 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
         {
             continue;
         }
+        bool tooClose = distance < 0.1;
+        if (tooClose)
+        {
+            nTooClosePoints++;
+            continue;
+        }
 
         // converts to a Lidar Point which uses doubles
         LidarPoint writePoint;
@@ -545,6 +556,10 @@ PointCloud BFReader::getLidarPoints(bf::Datum &datum)
         writePoint.timestamp = TimespecToDouble(datum.time) + secondsToRotateToTheta;
         writePoint.laser_id = readPoint.laser_id;
         outPoints.emplace_back(writePoint);
+    }
+    if (nTooClosePoints != 0)
+    {
+        log()->get(LogLevel::Debug2) << "Dropped too close points " << nTooClosePoints << "\n";
     }
     pointCloud.points = std::move(outPoints);
     return pointCloud;
