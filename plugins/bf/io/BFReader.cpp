@@ -306,10 +306,12 @@ uint BFReader::insertRtkDatumsIntoInterpolator(bf::DatumParser &parser)
         }
 
         // the interpolator expects novotel angles to be radians so do conversion here
-        // todo: make this parameterizable
-        rtkMessage.set_heading(deg2rad(rtkMessage.heading()));
-        rtkMessage.set_roll(deg2rad(rtkMessage.roll()));
-        rtkMessage.set_pitch(deg2rad(rtkMessage.pitch()));
+        if (m_args.convertRtkAnglesToRadians)
+        {
+            rtkMessage.set_heading(deg2rad(rtkMessage.heading()));
+            rtkMessage.set_roll(deg2rad(rtkMessage.roll()));
+            rtkMessage.set_pitch(deg2rad(rtkMessage.pitch()));
+        }
         m_rtkInterpolator.InsertNewData(timespec, rtkMessage, false);
 
         if (count == 0)

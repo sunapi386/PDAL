@@ -26,7 +26,7 @@ struct BFArgs
     bool mCompensate = true;
     int nPointsReadLimit = -1; // ignore if negative
     double mLidarDistanceReturnFilter = -1; // ignore if negative
-    bool aoyanCompensation = false; // takes longer
+    bool convertRtkAnglesToRadians = true;
 };
 
 template<typename T, typename... Args>
