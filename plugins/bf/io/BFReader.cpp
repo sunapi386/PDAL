@@ -403,17 +403,6 @@ void BFReader::mutatePC_referenceFromRtkToUTM(PointCloudRef cloud)
     const Eigen::Affine3d &affineFromRtkMessageFinish = createAffineFromRtkMessage(rtkMsgFinish);
     const Eigen::Affine3d &affineFromRtkMessageStart = createAffineFromRtkMessage(rtkMsgStart);
 
-    if (m_args.aoyanCompensation)
-    {
-        // doing special motion compensation doesn't seem to be the issue
-        LidarTimestampInterpolator interpolator;
-        double timespec = TimespecToDouble(cloud.timePlaceSegment.finish.time);
-        interpolator.UpdateTimestamp(0.1, utility::bf::DoubleToTimespec(timespec - 0.1), &cloud.points);
-        LidarMotionCompensator motion_compensator;
-        motion_compensator.CompensateCloudToEnd(cloud.points, affineFromRtkMessageStart,
-                                                utility::bf::DoubleToTimespec(timespec - 0.1), affineFromRtkMessageFinish,
-                                                utility::bf::DoubleToTimespec(timespec), &cloud.points);
-    }
 
     for (LidarPointRef pt : cloud.points)
     {
