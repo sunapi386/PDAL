@@ -359,37 +359,26 @@ Eigen::Affine3d BFReader::createAffineFromRtkMessage(msg::RTKMessage &rtkMessage
     GeographicLib::UTMUPS::Forward(rtkMessage.latitude(), rtkMessage.longitude(), utmZone, utmNorth, utmMetersEasting, utmMetersNorthing);
 
     Eigen::Affine3d affine3d = Eigen::Affine3d::Identity();
-//    affine3d.translation() = Eigen::Vector3d(rtkMessage.latitude(), rtkMessage.longitude(), utmZ);
-//    double metersX = distanceEarth(rtkMessage.latitude(), m_rtkFirst.longitude(), m_rtkFirst.latitude(), m_rtkFirst.longitude()) * 1000;
-//    double metersY = distanceEarth(m_rtkFirst.latitude(), rtkMessage.longitude(), m_rtkFirst.latitude(), m_rtkFirst.longitude()) * 1000;
-
-//    affine3d.translation() = Eigen::Vector3d(metersX, metersY, utmZ);
-//    affine3d.translation() = Eigen::Vector3d(utmMetersEasting, utmMetersNorthing, utmZ);
-//    affine3d.translation() = Eigen::Vector3d(utmMetersNorthing, utmMetersEasting, utmZ);
-    double deltaX = utmMetersEasting - m_rtkFirstUtmEasting;
-    double deltaY = utmMetersNorthing - m_rtkFirstUtmNorthing;
-    affine3d.translation() = Eigen::Vector3d(deltaX, deltaY, utmZ);
-
+    affine3d.translation() = Eigen::Vector3d(utmMetersEasting, utmMetersNorthing, utmZ);
+    // roll/pitch/yaw converted to radians already
     double roll = deg2rad(rtkMessage.roll())- deg2rad(m_rtkFirst.roll());
     Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
     double pitch = deg2rad(rtkMessage.pitch())- deg2rad(m_rtkFirst.pitch());
     Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
-//    double heading =  M_PI / 2 - deg2rad(rtkMessage.heading());
-    double heading =  M_PI / 2 - rtkMessage.heading(); // already in radians
+    double heading =  M_PI / 2 - rtkMessage.heading();
     Eigen::AngleAxisd yawAngle(heading, Eigen::Vector3d::UnitZ());
     Eigen::Quaternion<double> quaternion =  yawAngle * pitchAngle * rollAngle;
     affine3d.linear() = quaternion.matrix();
-    /*{
-        log()->get(LogLevel::Debug) << "lat=" << rtkMessage.latitude() << ", lng=" << rtkMessage.longitude() << "\n";
-    //        log()->get(LogLevel::Debug) << "metersX=" << metersX << ", metersY=" << metersY << "\n";
-        log()->get(LogLevel::Debug) << "utmZone=" << utmZone << ", utmNorth=" << utmNorth << "\n";
-        log()->get(LogLevel::Debug) << "utmX=" << utmMetersEasting << ", utmY=" << utmMetersNorthing << ", utmZ=" << utmZ << "\n";
-        log()->get(LogLevel::Debug) << "translation=" << affine3d.translation() << "\n";
-        log()->get(LogLevel::Debug) << "roll=" << roll  << "(" << rtkMessage.roll() << "deg)\n";
-        log()->get(LogLevel::Debug) << "pitch=" << pitch  << "(" << rtkMessage.pitch() << "deg)\n";
-        log()->get(LogLevel::Debug) << "yaw=" << heading  << "(" << rtkMessage.heading() << "deg)\n";
-        log()->get(LogLevel::Debug) << "affine=\n" << affine3d.matrix() << "\n";
-    }*/
+    {
+        log()->get(LogLevel::Debug5) << "lat=" << rtkMessage.latitude() << ", lng=" << rtkMessage.longitude() << "\n";
+        log()->get(LogLevel::Debug5) << "utmZone=" << utmZone << ", utmNorth=" << utmNorth << "\n";
+        log()->get(LogLevel::Debug5) << "utmX=" << utmMetersEasting << ", utmY=" << utmMetersNorthing << ", utmZ=" << utmZ << "\n";
+        log()->get(LogLevel::Debug5) << "translation=" << affine3d.translation() << "\n";
+        log()->get(LogLevel::Debug5) << "roll=" << roll  << "(" << rtkMessage.roll() << "deg)\n";
+        log()->get(LogLevel::Debug5) << "pitch=" << pitch  << "(" << rtkMessage.pitch() << "deg)\n";
+        log()->get(LogLevel::Debug5) << "yaw=" << heading  << "(" << rtkMessage.heading() << "deg)\n";
+        log()->get(LogLevel::Debug5) << "affine=\n" << affine3d.matrix() << "\n";
+    }
     return affine3d;
 }
 
