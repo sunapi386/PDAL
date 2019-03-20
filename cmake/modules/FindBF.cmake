@@ -9,22 +9,20 @@
 ###############################################################################
 MESSAGE(STATUS "Searching for BF")
 
-IF(BF)
-  # Already in cache, be silent
-  SET(BF_FIND_QUIETLY TRUE)
-ENDIF()
+find_path(BF_INCLUDE_DIR NAMES bf.hpp
+        PATH_SUFFIXES "include")
+mark_as_advanced(BF_INCLUDE_DIR)
 
-FIND_FILE(BF
-        libbf.a # todo: once this file is found the .h files are not checked... fix this
-        bf_macros.h
-        bf_datum_parser.h
-        bf_datum_writer.h
-        bf_timespec_utils.h
-        PATHS
-        /usr/local/lib
-        /usr/local/include
-        /usr/local)
+find_library(BF_LIBRARY NAMES bf)
+mark_as_advanced(BF_LIBRARY)
 
-# Handle the QUIETLY and REQUIRED arguments and set BF_FOUND to TRUE
-# if all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(BF
+        REQUIRED_VARS BF_LIBRARY BF_INCLUDE_DIR)
+
+if (BF_FOUND)
+  set(BF_LIBRARIES ${BF_LIBRARY})
+  set(BF_INCLUDE_DIRS ${BF_INCLUDE_DIR})
+else()
+  message(WARNING "BF not found")
+endif()
