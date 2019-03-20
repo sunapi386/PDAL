@@ -1,5 +1,5 @@
 /******************************************************************************
-* Copyright (c) 2015, Hobu Inc. (info@hobu.co)
+* Copyright (c) 2019, Hobu Inc. (info@hobu.co)
 *
 * All rights reserved.
 *
@@ -31,77 +31,66 @@
 * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
 * OF SUCH DAMAGE.
 ****************************************************************************/
-#pragma once
 
-#include <memory>
+#include <pdal/pdal_test_main.hpp>
 
-#include <geos_c.h>
+#include <pdal/StageFactory.hpp>
+#include <io/FauxReader.hpp>
+#include <filters/HeadFilter.hpp>
+#include <filters/TailFilter.hpp>
 
-#include <pdal/pdal_types.hpp>
-#include <pdal/Log.hpp>
+#include "Support.hpp"
 
-namespace pdal
+using namespace pdal;
+
+
+void testFilter(bool head, bool invert)
 {
+    BOX3D srcBounds(0.0, 0.0, 1.0, 0.0, 0.0, 10.0);
 
-namespace geos
+    Options ops;
+    ops.add("bounds", srcBounds);
+    ops.add("mode", "ramp");
+    ops.add("count", 10);
+
+    FauxReader reader;
+    reader.setOptions(ops);
+
+    Options ops2;
+    ops2.add("count", 4);
+    ops2.add("invert", invert);
+
+    StageFactory fac;
+    Stage& f = *(fac.createStage(head ? "filters.head" : "filters.tail"));
+    f.setOptions(ops2);
+    f.setInput(reader);
+
+    PointTable t;
+    f.prepare(t);
+    PointViewSet s = f.execute(t);
+    PointViewPtr v = *s.begin();
+    EXPECT_EQ(v->size(), invert ? 6u : 4u);
+
+    int min { 0 };
+    if (head)
+        min = invert ? 5 : 1;
+    else
+        min = invert ? 1 : 7;
+
+    for (PointId i = 0; i < v->size(); ++i)
+    {
+        int z = v->getFieldAs<int>(Dimension::Id::Z, i);
+        EXPECT_EQ(z, min);
+        min++;
+    }
+
+}
+
+TEST(HeadTailFilterTest, t1)
 {
-
-class PDAL_DLL ErrorHandler
-{
-public:
-    ~ErrorHandler();
-
-    /**
-      Get the singleton error handler.
-
-      \return  Reference to the error handler.
-    */
-    static ErrorHandler& get();
-
-    /**
-      Set the log and debug state of the error handler.  This is a convenience
-      and is equivalent to calling setLog() and setDebug().
-
-      \param log  Log to write to.
-      \param doDebug  Debug state of the error handler.
-    */
-    void set(LogPtr log, bool doDebug);
-
-    /**
-      Set the log to which error/debug messages should be written.
-
-      \param log  Log to write to.
-    */
-    void setLog(LogPtr log);
-
-    /**
-      Set the debug state of the error handler.  If the error handler is set
-      to debug, output is logged instead of causing an exception.
-
-      \param debug  The debug state of the error handler.
-    */
-    void setDebug(bool debug);
-
-    /**
-      Get the GEOS context handle.
-
-      \return  The GEOS context handle.
-    */
-    GEOSContextHandle_t ctx() const;
-
-private:
-    ErrorHandler();
-
-    void handle(const char *msg, bool notice);
-    static void vaErrorCb(const char *msg, ...);
-    static void vaNoticeCb(const char *msg, ...);
-
-    GEOSContextHandle_t m_ctx;
-    bool m_debug;
-    LogPtr m_log;
-    static std::unique_ptr<ErrorHandler> m_instance;
-};
-
-} // namespace geos
-} // namespace pdal
+    testFilter(true, true);
+    testFilter(true, false);
+    testFilter(false, true);
+    testFilter(false, false);
+}
 
