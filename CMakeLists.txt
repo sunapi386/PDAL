@@ -38,14 +38,14 @@ mark_as_advanced(CMAKE_VERBOSE_MAKEFILE)
 
 # the next line is the ONLY place in the entire pdal system where
 # the version info is hard-coded
-set(PDAL_VERSION_STRING "1.8.0" CACHE STRING "PDAL version")
+set(PDAL_VERSION_STRING "1.9.0" CACHE STRING "PDAL version")
 
 DISSECT_VERSION()
 GET_OS_INFO()
 SET_INSTALL_DIRS()
 
-set(PDAL_API_VERSION "7")
-set(PDAL_BUILD_VERSION "8.0.0")
+set(PDAL_API_VERSION "8")
+set(PDAL_BUILD_VERSION "9.0.0")
 
 # Name of C++ library
 
@@ -138,6 +138,7 @@ include(${PDAL_CMAKE_DIR}/json.cmake)
 include(${PDAL_CMAKE_DIR}/libxml2.cmake)
 include(${PDAL_CMAKE_DIR}/dimension.cmake)
 include(${PDAL_CMAKE_DIR}/arbiter.cmake)
+include(${PDAL_CMAKE_DIR}/openssl.cmake) # Optional
 
 #------------------------------------------------------------------------------
 # generate the pdal_features.hpp header
