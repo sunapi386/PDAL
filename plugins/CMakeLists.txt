@@ -92,6 +92,10 @@ if(BUILD_PLUGIN_TILEDB)
     add_subdirectory(tiledb)
 endif()
 
+if(BUILD_PLUGIN_E57)
+    add_subdirectory(e57)
+endif()
+
 if(BUILD_PLUGIN_BF)
     add_subdirectory(bf)
 endif()
