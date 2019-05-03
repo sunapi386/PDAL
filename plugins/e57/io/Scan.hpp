@@ -1,5 +1,5 @@
 /******************************************************************************
-* Copyright (c) 2019, Hobu Inc. (info@hobu.co)
+* Copyright (c) 2019, Helix Re Inc.
 *
 * All rights reserved.
 *
@@ -13,9 +13,10 @@
 *       notice, this list of conditions and the following disclaimer in
 *       the documentation and/or other materials provided
 *       with the distribution.
-*     * Neither the name of Hobu, Inc. nor the names of its contributors
-*       may be used to endorse or promote products derived from this
-*       software without specific prior written permission.
+*     * Neither the name of Helix Re Inc. nor the
+*       names of its contributors may be used to endorse or promote
+*       products derived from this software without specific prior
+*       written permission.
 *
 * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -33,42 +34,51 @@
 
 #pragma once
 
-#include <pdal/util/Box.hpp>
+#include <pdal/pdal_types.hpp>
+#include <pdal/Writer.hpp>
+#include <pdal/Dimension.hpp>
+#include <E57Format.h>
 
-namespace pdal
+namespace e57
+{
+class Scan
 {
 
-/**
-  Wrapper for BOX3D and BOX2D to allow extraction as either.  Typically used
-  to facilitate streaming either a BOX2D or BOX3D
-*/
-class PDAL_DLL Bounds
-{
 public:
-    Bounds()
-    {}
+    Scan(const e57::StructureNode& scanNode);
 
-    explicit Bounds(const BOX3D& box);
-    explicit Bounds(const BOX2D& box);
+    pdal::point_count_t getNumPoints() const;
 
-    BOX3D to3d() const;
-    BOX2D to2d() const;
-    bool is3d() const;
+    /// Get the pdal dimensions that can be read from this scan
+    std::set<std::string> getDimensions() const;
 
-    friend PDAL_DLL std::istream& operator >> (std::istream& in,
-        Bounds& bounds);
-    friend PDAL_DLL std::ostream& operator << (std::ostream& out,
-        const Bounds& bounds);
+    e57::CompressedVectorNode getPoints() const;
+
+    std::pair<double,double> getLimits(pdal::Dimension::Id pdalId) const;
+
+    bool hasPose() const;
+    void transformPoint(pdal::PointRef pt) const;
 
 private:
-    BOX3D m_box;
+    /// Called only once on constructor called
+    void decodeHeader();
 
-    void set(const BOX3D& box);
-    void set(const BOX2D& box);
+    void getPose();
+
+    // Core data holders for underlying e57 object
+    std::unique_ptr<e57::StructureNode> m_rawData;
+    std::unique_ptr<e57::CompressedVectorNode> m_rawPoints;
+    pdal::point_count_t m_numPoints;
+
+    // supported configs
+    std::set<std::string> m_e57TypeToPdalDimension;
+
+    // field limits in header
+    std::map<pdal::Dimension::Id,std::pair<double,double>> m_valueBounds;
+
+    // Pose information
+    double m_translation[3] = {0};
+    double m_rotation[3][3] = {{0}};
+    bool m_hasPose = false;
 };
-
-PDAL_DLL std::istream& operator >> (std::istream& in, Bounds& bounds);
-PDAL_DLL std::ostream& operator << (std::ostream& in, const Bounds& bounds);
-
-} // namespace pdal
-
+}
