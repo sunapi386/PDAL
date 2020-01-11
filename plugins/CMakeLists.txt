@@ -16,10 +16,6 @@ if(BUILD_PLUGIN_GEOWAVE)
     add_subdirectory(geowave)
 endif(BUILD_PLUGIN_GEOWAVE)
 
-if(BUILD_PLUGIN_GREYHOUND AND CURL_FOUND)
-    add_subdirectory(greyhound)
-endif()
-
 if(BUILD_PLUGIN_ICEBRIDGE)
     if (NOT PDAL_HAVE_LIBXML2)
         message(FATAL_ERROR "Can't build icebridge plugin without libxml2")
@@ -48,10 +44,6 @@ if(BUILD_PLUGIN_OCI)
         message(FATAL_ERROR "Can't build OCI plugin without libxml2")
     endif()
     add_subdirectory(oci)
-endif()
-
-if(BUILD_PLUGIN_PCL)
-    add_subdirectory(pcl)
 endif()
 
 if(BUILD_PLUGIN_PGPOINTCLOUD)

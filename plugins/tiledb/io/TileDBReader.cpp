@@ -88,7 +88,7 @@ Dimension::Type getPdalType(tiledb_datatype_t t)
 
 void TileDBReader::addArgs(ProgramArgs& args)
 {
-    args.add("array_name", "TileDB array name", m_arrayName).setPositional();
+    args.addSynonym("filename", "array_name");
     args.add("config_file", "TileDB configuration file location",
         m_cfgFileName);
     args.add("chunk_size", "TileDB read chunk size", m_chunkSize,
@@ -97,6 +97,14 @@ void TileDBReader::addArgs(ProgramArgs& args)
     args.add("bbox3d", "Bounding box subarray to read from TileDB in format "
         "([minx, maxx], [miny, maxy], [minz, maxz])", m_bbox);
 }
+
+void TileDBReader::prepared(PointTableRef table)
+{
+    if (m_filename.empty())
+        throwError("Required argument 'filename' (TileDB array name) "
+            "not provided.");
+}
+
 
 void TileDBReader::initialize()
 {
@@ -108,7 +116,14 @@ void TileDBReader::initialize()
     else
         m_ctx.reset(new tiledb::Context());
 
-    m_array.reset(new tiledb::Array(*m_ctx, m_arrayName, TILEDB_READ));
+    try
+    {
+        m_array.reset(new tiledb::Array(*m_ctx, m_filename, TILEDB_READ));
+    }
+    catch (const tiledb::TileDBError& err)
+    {
+        throwError(std::string("TileDB Error: ") + err.what());
+    }
 }
 
 void TileDBReader::addDimensions(PointLayoutPtr layout)
@@ -204,6 +219,19 @@ void TileDBReader::setQueryBuffer(const DimInfo& di)
 
 void TileDBReader::ready(PointTableRef)
 {
+    try
+    {
+        localReady();
+    }
+    catch (const tiledb::TileDBError& err)
+    {
+        throwError(std::string("TileDB Error: ") + err.what());
+    }
+}
+
+
+void TileDBReader::localReady()
+{
     int numDims = m_array->schema().domain().dimensions().size();
 
     m_query.reset(new tiledb::Query(*m_ctx, *m_array));
@@ -232,14 +260,14 @@ void TileDBReader::ready(PointTableRef)
         }
     }
 
-// Set the extent of the query.
+    // Set the extent of the query.
     if (!m_bbox.empty())
     {
         if (numDims == 2)
-            m_query->set_subarray({m_bbox.minx, m_bbox.minx,
+            m_query->set_subarray({m_bbox.minx, m_bbox.maxx,
                 m_bbox.miny, m_bbox.maxy});
         else
-            m_query->set_subarray({m_bbox.minx, m_bbox.minx,
+            m_query->set_subarray({m_bbox.minx, m_bbox.maxx,
                 m_bbox.miny, m_bbox.maxy, m_bbox.minz, m_bbox.maxz});
     }
     else
@@ -254,13 +282,17 @@ void TileDBReader::ready(PointTableRef)
         }
         m_query->set_subarray(subarray);
     }
+
+    // initialize read buffer variables
+    m_offset = 0;
+    m_resultSize = 0;
+    m_complete = false;
 }
 
 namespace
 {
 
-bool setField(PointViewPtr view, TileDBReader::DimInfo di, PointId idx,
-    size_t bufOffset)
+bool setField(PointRef& point, TileDBReader::DimInfo di, size_t bufOffset)
 {
     // Span is a count of the number of elements in each set of data, so
     // offset is a count of item types.  We're doing pointer arithmetic
@@ -270,34 +302,34 @@ bool setField(PointViewPtr view, TileDBReader::DimInfo di, PointId idx,
     switch (di.m_type)
     {
     case Dimension::Type::Signed8:
-        view->setField(di.m_id, idx, *(buf.get<int8_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<int8_t>() + bufOffset));
         break;
     case Dimension::Type::Unsigned8:
-        view->setField(di.m_id, idx, *(buf.get<uint8_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<uint8_t>() + bufOffset));
         break;
     case Dimension::Type::Signed16:
-        view->setField(di.m_id, idx, *(buf.get<int16_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<int16_t>() + bufOffset));
         break;
     case Dimension::Type::Unsigned16:
-        view->setField(di.m_id, idx, *(buf.get<uint16_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<uint16_t>() + bufOffset));
         break;
     case Dimension::Type::Signed32:
-        view->setField(di.m_id, idx, *(buf.get<int32_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<int32_t>() + bufOffset));
         break;
     case Dimension::Type::Unsigned32:
-        view->setField(di.m_id, idx, *(buf.get<uint32_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<uint32_t>() + bufOffset));
         break;
     case Dimension::Type::Signed64:
-        view->setField(di.m_id, idx, *(buf.get<int64_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<int64_t>() + bufOffset));
         break;
     case Dimension::Type::Unsigned64:
-        view->setField(di.m_id, idx, *(buf.get<uint64_t>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<uint64_t>() + bufOffset));
         break;
     case Dimension::Type::Float:
-        view->setField(di.m_id, idx, *(buf.get<float>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<float>() + bufOffset));
         break;
     case Dimension::Type::Double:
-        view->setField(di.m_id, idx, *(buf.get<double>() + bufOffset));
+        point.setField(di.m_id, *(buf.get<double>() + bufOffset));
         break;
     default:
         return false;
@@ -307,58 +339,81 @@ bool setField(PointViewPtr view, TileDBReader::DimInfo di, PointId idx,
 
 } // unnamed namespace
 
+
+bool TileDBReader::processOne(PointRef& point)
+{
+    try
+    {
+        return processPoint(point);
+    }
+    catch (const tiledb::TileDBError& err)
+    {
+        throwError(std::string("TileDB Error: ") + err.what());
+    }
+    return false;
+}
+
+
+bool TileDBReader::processPoint(PointRef& point)
+{
+    if (m_offset == m_resultSize)
+    {
+        if (m_complete)
+        {
+            return false;
+        }
+        else
+        {
+            tiledb::Query::Status status;
+            if (m_stats)
+                tiledb::Stats::enable();
+            m_query->submit();
+            if (m_stats)
+            {
+                tiledb::Stats::dump(stdout);
+                tiledb::Stats::disable();
+            }
+
+            status = m_query->query_status();
+
+            // The result buffer count represents the total number of items
+            // returned by the query for dimensions.  So if there are three
+            // dimensions, the number of points returned is the buffer count
+            // divided by the number of dimensions.
+            m_resultSize =
+                (int)m_query->result_buffer_elements()[TILEDB_COORDS].second /
+                m_array->schema().domain().dimensions().size();
+
+            if (status == tiledb::Query::Status::INCOMPLETE &&
+                    m_resultSize == 0)
+                throwError("Need to increase chunk_size for reader.");
+
+            if (status == tiledb::Query::Status::COMPLETE)
+                m_complete = true;
+
+            m_offset = 0;
+        }     
+    }
+
+    for (DimInfo& dim : m_dims)
+        if (!setField(point, dim, m_offset))
+            throwError("Invalid dimension type when setting data.");
+
+    ++m_offset;
+    return true;
+}
+
 point_count_t TileDBReader::read(PointViewPtr view, point_count_t count)
 {
-    PointId idx = view->size();
-    point_count_t numRead = 0;
-
-    tiledb::Query::Status status;
-    do
+    PointRef point = view->point(0);
+    PointId id;
+    for (id = 0; id < count; ++id)
     {
-        if (m_stats)
-            tiledb::Stats::enable();
-        m_query->submit();
-        if (m_stats)
-        {
-            tiledb::Stats::dump(stdout);
-            tiledb::Stats::disable();
-        }
-
-        status = m_query->query_status();
-
-        // The result buffer count represents the total number of items
-        // returned by the query for dimensions.  So if there are three
-        // dimensions, the number of points returned is the buffer count
-        // divided by the number of dimensions.
-        size_t result_num =
-            (int)m_query->result_buffer_elements()[TILEDB_COORDS].second /
-            m_array->schema().domain().dimensions().size();
-
-        if (status == tiledb::Query::Status::INCOMPLETE && result_num == 0)
-            throwError("Need to increase chunk_size for reader.");
-
-        for (size_t i = 0; i < result_num; ++i)
-        {
-            for (DimInfo& dim : m_dims)
-                if (!setField(view, dim, idx, i))
-                    throwError("Invalid dimension type when setting data.");
-
-            // progess callback
-            if (m_cb)
-                m_cb(*view, idx);
-
-            idx++;
-            numRead++;
-
-            if (numRead == count)
-                break;
-        }
+        point.setPointId(id);
+        if (!processOne(point))
+            break;
     }
-    while(status == tiledb::Query::Status::INCOMPLETE);
-
-    if (status == tiledb::Query::Status::FAILED)
-        throwError("Unable to read from " + m_arrayName);
-    return numRead;
+    return id;   
 }
 
 void TileDBReader::done(pdal::BasePointTable &table)

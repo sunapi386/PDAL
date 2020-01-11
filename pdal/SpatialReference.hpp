@@ -36,6 +36,8 @@
 
 #include <pdal/pdal_internal.hpp>
 
+using OGRSpatialReferenceH = void *;
+
 namespace pdal
 {
 
@@ -69,6 +71,7 @@ public:
       \param wkt  Well-known text from which to construct SRS.
     */
     SpatialReference(const std::string& wkt);
+
 
     /**
       Determine if this spatial reference is the same as another.
@@ -113,6 +116,11 @@ public:
     bool valid() const;
 
     std::string getWKT() const;
+
+    /// Parse the string starting at position `pos` as a spatial reference.
+    /// \param s    String to parse.
+    /// \param pos  Position to start parsing string.
+    void parse(const std::string& s, std::string::size_type& pos);
 
     /// Sets the SRS from a string representation.  WKT is saved as
     /// provided.

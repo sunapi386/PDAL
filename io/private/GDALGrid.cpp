@@ -52,12 +52,12 @@ namespace pdal
 //  moving data around every time the grid is resized.
 
 GDALGrid::GDALGrid(size_t width, size_t height, double edgeLength,
-        double radius, int outputTypes, size_t windowSize) :
+        double radius, int outputTypes, size_t windowSize, double power) :
     m_width(width), m_height(height), m_windowSize(windowSize),
-    m_edgeLength(edgeLength), m_radius(radius), m_outputTypes(outputTypes)
+    m_edgeLength(edgeLength), m_radius(radius), m_power(power), m_outputTypes(outputTypes)
 {
-    if (width > (std::numeric_limits<int>::max)() ||
-        height > (std::numeric_limits<int>::max)())
+    if (width > (size_t)(std::numeric_limits<int>::max)() ||
+        height > (size_t)(std::numeric_limits<int>::max)())
     {
         std::ostringstream oss;
         oss << "Grid width or height is too large. Width and height are "
@@ -184,9 +184,6 @@ double *GDALGrid::data(const std::string& name)
 
 void GDALGrid::addPoint(double x, double y, double z)
 {
-    int iOrigin = horizontalIndex(x);
-    int jOrigin = verticalIndex(y);
-
     // Here's the logic... we divide the cells around the subject cell
     // (at iOrigin, jOrigin) into four quadrants.  We move outward from the
     // subject cell, checking distance until we find that we're farther than
@@ -215,87 +212,13 @@ void GDALGrid::addPoint(double x, double y, double z)
     //       <--- | v
     //         <- v
 
+    updateFirstQuadrant(x, y, z);
+    updateSecondQuadrant(x, y, z);
+    updateThirdQuadrant(x, y, z);
+    updateFourthQuadrant(x, y, z);
 
-    int i, j;
-    int iStart, jStart;
-    // First quadrant;
-    i = iStart = (std::max)(0, iOrigin + 1);
-    j = (std::min)(jOrigin, int(m_height - 1));
-    while (i < (int)m_width && j >= 0)
-    {
-        double d = distance(i, j, x, y);
-        if (d < m_radius)
-        {
-            update(i, j, z, d);
-            i++;
-        }
-        else
-        {
-            if (i == iStart)
-                break;
-            i = iStart;
-            j--;
-        }
-    }
-
-    // Second quadrant;
-    i = (std::min)(iOrigin, int(m_width - 1));
-    j = jStart = (std::min)(jOrigin - 1, int(m_height - 1));
-    while (i >= 0 && j >= 0)
-    {
-        double d = distance(i, j, x, y);
-        if (d < m_radius)
-        {
-            update(i, j, z, d);
-            j--;
-        }
-        else
-        {
-            if (j == jStart)
-                break;
-            j = jStart;
-            i--;
-        }
-    }
-
-    // Third quadrant;
-    i = iStart = (std::min)(iOrigin - 1, int(m_width - 1));
-    j = (std::max)(jOrigin, 0);
-    while (i >= 0 && j < (int)m_height)
-    {
-        double d = distance(i, j, x, y);
-        if (d < m_radius)
-        {
-            update(i, j, z, d);
-            i--;
-        }
-        else
-        {
-            if (i == iStart)
-                break;
-            i = iStart;
-            j++;
-        }
-    }
-    // Fourth quadrant;
-    i = (std::max)(iOrigin, 0);
-    j = jStart = (std::max)(jOrigin + 1, 0);
-    while (i < (int)m_width && j < (int)m_height)
-    {
-        double d = distance(i, j, x, y);
-        if (d < m_radius)
-        {
-            update(i, j, z, d);
-            j++;
-        }
-        else
-        {
-            if (j == jStart)
-                break;
-            j = jStart;
-            i++;
-        }
-    }
+    int iOrigin = horizontalIndex(x);
+    int jOrigin = verticalIndex(y);
 
     // This is a questionable case.  If a point is in a cell, shouldn't
     // it just be counted?
@@ -305,6 +228,145 @@ void GDALGrid::addPoint(double x, double y, double z)
         iOrigin < (int)m_width && jOrigin < (int)m_height)
         update(iOrigin, jOrigin, z, d);
 }
+
+
+void GDALGrid::updateFirstQuadrant(double x, double y, double z)
+{
+    int i, j;
+    int iStart;
+    int iOrigin = horizontalIndex(x);
+    int jOrigin = verticalIndex(y);
+
+    i = iStart = (std::max)(0, iOrigin + 1);
+    j = (std::min)(jOrigin, int(m_height - 1));
+
+    if (iStart >= (int)m_width)
+        return;
+
+    while (j >= 0)
+    {
+        double d = distance(i, j, x, y);
+        if (d < m_radius)
+        {
+            update(i, j, z, d);
+            i++;
+            if (i < (int)m_width)
+                continue;
+        }
+
+        // Either d >= m_radius or we've hit the end of a row (i == m_width),
+        // so move to the next row.
+        if (i == iStart)
+            break;
+        i = iStart;
+        j--;
+    }
+}
+
+
+void GDALGrid::updateSecondQuadrant(double x, double y, double z)
+{
+    int i, j;
+    int jStart;
+    int iOrigin = horizontalIndex(x);
+    int jOrigin = verticalIndex(y);
+
+    i = (std::min)(iOrigin, int(m_width - 1));
+    j = jStart = (std::min)(jOrigin - 1, int(m_height - 1));
+
+    if (jStart < 0)
+        return;
+
+    while (i >= 0)
+    {
+        double d = distance(i, j, x, y);
+        if (d < m_radius)
+        {
+            update(i, j, z, d);
+            j--;
+            if (j >= 0)
+                continue;
+        }
+
+        // Either d >= m_radius or we've hit the end of a column (j < 0),
+        // so move to the next column.
+        if (j == jStart)
+            break;
+        j = jStart;
+        i--;
+    }
+}
+
+
+void GDALGrid::updateThirdQuadrant(double x, double y, double z)
+{
+    int i, j;
+    int iStart;
+    int iOrigin = horizontalIndex(x);
+    int jOrigin = verticalIndex(y);
+
+    i = iStart = (std::min)(iOrigin - 1, int(m_width - 1));
+    j = (std::max)(jOrigin, 0);
+
+    if (iStart < 0)
+        return;
+
+    while (j < (int)m_height)
+    {
+        double d = distance(i, j, x, y);
+        if (d < m_radius)
+        {
+            update(i, j, z, d);
+            i--;
+            if (i >= 0)
+                continue;
+        }
+
+        // Either d >= m_radius or we've hit the end of a row (i < 0),
+        // so move to the next row.
+        if (i == iStart)
+            break;
+        i = iStart;
+        j++;
+    }
+}
+
+
+void GDALGrid::updateFourthQuadrant(double x, double y, double z)
+{
+
+    int i, j;
+    int jStart;
+    int iOrigin = horizontalIndex(x);
+    int jOrigin = verticalIndex(y);
+
+    i = (std::max)(iOrigin, 0);
+    j = jStart = (std::max)(jOrigin + 1, 0);
+
+    if (jStart >= (int)m_height)
+        return;
+
+    while (i < (int)m_width)
+    {
+        double d = distance(i, j, x, y);
+        if (d < m_radius)
+        {
+            update(i, j, z, d);
+            j++;
+            if (j < (int)m_height)
+                continue;
+        }
+
+
+        // Either d >= m_radius or we've hit the end of a column (j == m_height)
+        // so move to the next row.
+        if (j == jStart)
+            break;
+        j = jStart;
+        i++;
+    }
+}
+
 
 void GDALGrid::update(size_t i, size_t j, double val, double dist)
 {
@@ -364,8 +426,8 @@ void GDALGrid::update(size_t i, size_t j, double val, double dist)
             }
             else
             {
-                idw += val / dist;
-                idwDist += 1 / dist;
+                idw += val / std::pow(dist, m_power);
+                idwDist += 1 / std::pow(dist, m_power);
             }
         }
     }
@@ -386,7 +448,6 @@ void GDALGrid::finalize()
             if (!empty(i))
             {
                 double& distSum = (*m_idwDist)[i];
-
                 if (!std::isnan(distSum))
                     (*m_idw)[i] /= distSum;
             }

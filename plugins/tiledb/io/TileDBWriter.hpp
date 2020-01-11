@@ -34,13 +34,17 @@
 
 #pragma once
 
+#define NOMINMAX
+
+#include <pdal/Streamable.hpp>
 #include <pdal/Writer.hpp>
+
 #include <tiledb/tiledb>
 
 namespace pdal
 {
 
-class PDAL_DLL TileDBWriter : public Writer
+class PDAL_DLL TileDBWriter : public Writer, public Streamable
 {
 public:
     struct DimBuffer
@@ -55,36 +59,31 @@ public:
         {}
     };
 
-    TileDBWriter() = default;
+    TileDBWriter();
+    ~TileDBWriter();
     std::string getName() const;
 private:
     virtual void addArgs(ProgramArgs& args);
     virtual void initialize();
     virtual void ready(PointTableRef table);
     virtual void write(const PointViewPtr view);
+    virtual bool processOne(PointRef& point);
     virtual void done(PointTableRef table);
 
-    std::string m_arrayName;
-    std::string m_cfgFileName;
+    bool flushCache(size_t size);
 
-    size_t m_tile_capacity;
-    size_t m_x_tile_size;
-    size_t m_y_tile_size;
-    size_t m_z_tile_size;
-
-    bool m_stats;
+    struct Args;
+    std::unique_ptr<TileDBWriter::Args> m_args;
 
     BOX3D m_bbox;
-
-    std::unique_ptr<tiledb::FilterList> m_filterList;
-    std::string m_compressor;
-    int m_compressionLevel;
+    size_t m_current_idx;
 
     std::unique_ptr<tiledb::Context> m_ctx;
     std::unique_ptr<tiledb::ArraySchema> m_schema;
     std::unique_ptr<tiledb::Array> m_array;
     std::unique_ptr<tiledb::Query> m_query;
     std::vector<DimBuffer> m_attrs;
+    std::vector<double> m_coords;
 
     TileDBWriter(const TileDBWriter&) = delete;
     TileDBWriter& operator=(const TileDBWriter&) = delete;

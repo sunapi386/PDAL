@@ -34,11 +34,9 @@
 
 #include "ColorizationFilter.hpp"
 
+#include <pdal/GDALUtils.hpp>
 #include <pdal/PointView.hpp>
 #include <pdal/util/ProgramArgs.hpp>
-
-#include <gdal.h>
-#include <ogr_spatialref.h>
 
 #include <array>
 
@@ -153,6 +151,7 @@ void ColorizationFilter::initialize()
         m_dimSpec = { "Red", "Green", "Blue" };
 
     uint32_t defaultBand = 1;
+    m_bands.clear();
     for (std::string& dim : m_dimSpec)
     {
         try
@@ -169,7 +168,6 @@ void ColorizationFilter::initialize()
             throwError("invalid --dimensions option: '" + dim + "': " + what);
         }
     }
-
 }
 
 

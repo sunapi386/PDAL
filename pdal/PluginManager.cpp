@@ -63,6 +63,14 @@ PluginManager<T>& PluginManager<T>::get()
     return instance;
 }
 
+
+template <typename T>
+StageExtensions& PluginManager<T>::extensions()
+{
+    return get().m_extensions;
+}
+
+
 template <typename T>
 StringList PluginManager<T>::names()
 {
@@ -176,7 +184,7 @@ std::string PluginManager<T>::l_description(const std::string& name)
 
 
 template <typename T>
-PluginManager<T>::PluginManager() : m_log(new Log("PDAL", &std::clog)),
+PluginManager<T>::PluginManager() : m_log(Log::makeLog("PDAL", &std::clog)),
     m_extensions(m_log)
 {}
 

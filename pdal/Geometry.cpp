@@ -33,10 +33,8 @@
 ****************************************************************************/
 
 #include <pdal/Geometry.hpp>
-#include "cpl_string.h"
-
-#include <ogr_geometry.h>
-
+#include <pdal/GDALUtils.hpp>
+#include "private/SrsTransform.hpp"
 
 namespace pdal
 {
@@ -69,6 +67,11 @@ Geometry::Geometry(Geometry&& input) : m_geom(std::move(input.m_geom))
 {}
 
 
+Geometry::Geometry(OGRGeometryH g) :
+    m_geom((reinterpret_cast<OGRGeometry *>(g))->clone())
+{}
+
+
 Geometry::Geometry(OGRGeometryH g, const SpatialReference& srs) :
     m_geom((reinterpret_cast<OGRGeometry *>(g))->clone())
 {
@@ -80,30 +83,42 @@ Geometry::~Geometry()
 {}
 
 
+void Geometry::modified()
+{}
+
+
 void Geometry::update(const std::string& wkt_or_json)
 {
     bool isJson = (wkt_or_json.find("{") != wkt_or_json.npos) ||
                   (wkt_or_json.find("}") != wkt_or_json.npos);
 
     OGRGeometry *newGeom;
-    const char *input = wkt_or_json.data();
+    std::string srs;
     if (isJson)
     {
-        newGeom = gdal::createFromGeoJson(input);
+        newGeom = gdal::createFromGeoJson(wkt_or_json, srs);
         if (!newGeom)
             throw pdal_error("Unable to create geometry from input GeoJSON");
     }
     else
     {
-        newGeom = gdal::createFromWkt(input);
+        newGeom = gdal::createFromWkt(wkt_or_json, srs);
         if (!newGeom)
             throw pdal_error("Unable to create geometry from input WKT");
     }
 
     // m_geom may be null if update() is called from a ctor.
-    if (m_geom)
+    if (newGeom->getSpatialReference() && srs.size())
+        throw pdal_error("Geometry contains spatial reference and one was "
+            "also provided following the geometry specification.");
+    if (!newGeom->getSpatialReference() && srs.size())
+        newGeom->assignSpatialReference(
+            new OGRSpatialReference(SpatialReference(srs).getWKT().data()));
+    // m_geom may be null if update() is called from a ctor.
+    else if (m_geom)
         newGeom->assignSpatialReference(m_geom->getSpatialReference());
     m_geom.reset(newGeom);
+    modified();
 }
 
 
@@ -111,6 +126,7 @@ Geometry& Geometry::operator=(const Geometry& input)
 {
     if (m_geom != input.m_geom)
         *m_geom = *input.m_geom;
+    modified();
     return *this;
 }
 
@@ -122,22 +138,20 @@ bool Geometry::srsValid() const
 }
 
 
-void Geometry::transform(const SpatialReference& ref) const
+void Geometry::transform(const SpatialReference& out)
 {
-    if (!srsValid() && ref.empty())
+    if (!srsValid() && out.empty())
         return;
 
     if (!srsValid())
         throw pdal_error("Geometry::transform() failed.  NULL source SRS.");
-    if (ref.empty())
+    if (out.empty())
         throw pdal_error("Geometry::transform() failed.  NULL target SRS.");
 
-    OGRSpatialReference *input = m_geom->getSpatialReference();
-    OGRSpatialReference output(ref.getWKT().data());
-    OGRCoordinateTransformation *xform = OGRCreateCoordinateTransformation(
-        input, &output);
-    m_geom->transform(xform);
-    delete xform;
+    SrsTransform transform(getSpatialReference(), out);
+    if (m_geom->transform(transform.get()) != OGRERR_NONE)
+        throw pdal_error("Geometry::transform() failed.");
+    modified();
 }
 
 
@@ -236,12 +250,12 @@ std::ostream& operator<<(std::ostream& ostr, const Geometry& p)
 
 std::istream& operator>>(std::istream& istr, Geometry& p)
 {
-    std::ostringstream oss;
-    oss << istr.rdbuf();
+    // Read stream into string.
+    std::string s(std::istreambuf_iterator<char>(istr), {});
 
     try
     {
-        p.update(oss.str());
+        p.update(s);
     }
     catch (pdal_error& )
     {

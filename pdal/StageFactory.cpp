@@ -46,7 +46,7 @@ namespace pdal
 namespace
 {
 
-const std::vector<std::string> protocols { "ept", "greyhound", "i3s" };
+const std::vector<std::string> protocols { "ept", "i3s" };
 
 std::string getDriverProtocol(std::string filename)
 {
@@ -83,8 +83,11 @@ std::string StageFactory::inferReaderDriver(const std::string& filename)
     // Strip off '.' and make lowercase.
     if (ext.length())
         ext = Utils::tolower(ext.substr(1));
-    PluginManager<Stage>& mgr = PluginManager<Stage>::get();
-    return mgr.extensions().defaultReader(ext);
+
+    if (ext == "json" && Utils::endsWith(filename, "ept.json"))
+        return "readers.ept";
+
+    return PluginManager<Stage>::extensions().defaultReader(ext);
 }
 
 
@@ -96,22 +99,24 @@ std::string StageFactory::inferReaderDriver(const std::string& filename)
 */
 std::string StageFactory::inferWriterDriver(const std::string& filename)
 {
-    std::string ext;
-
     const std::string driverProtocol = getDriverProtocol(filename);
 
-    if (filename == "STDOUT")
+    std::string lFilename = Utils::tolower(filename);
+    if (lFilename == "devnull" || lFilename == "/dev/null")
+        return "writers.null";
+
+    std::string ext;
+    if (lFilename == "stdout")
         ext = ".txt";
     else if (!driverProtocol.empty())
         ext = "." + driverProtocol;
     else
-        ext = Utils::tolower(FileUtils::extension(filename));
+        ext = Utils::tolower(FileUtils::extension(lFilename));
     // Strip off '.' and make lowercase.
     if (ext.length())
         ext = Utils::tolower(ext.substr(1));
 
-    PluginManager<Stage>& mgr = PluginManager<Stage>::get();
-    return mgr.extensions().defaultWriter(ext);
+    return PluginManager<Stage>::extensions().defaultWriter(ext);
 }
 
 

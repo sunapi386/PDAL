@@ -36,6 +36,7 @@
 
 #include <pdal/KDIndex.hpp>
 #include <pdal/PointView.hpp>
+#include <pdal/Stage.hpp>
 #include <pdal/pdal_types.hpp>
 
 #include "DimRange.hpp"
@@ -49,10 +50,8 @@ namespace pdal
 namespace Segmentation
 {
 
-std::vector<std::vector<PointId>> extractClusters(PointView& view,
-                                                  uint64_t min_points,
-                                                  uint64_t max_points,
-                                                  double tolerance)
+std::vector<PointIdList> extractClusters(PointView& view, uint64_t min_points,
+                                         uint64_t max_points, double tolerance)
 {
     // Index the incoming PointView for subsequent radius searches.
     KD3Index kdi(view);
@@ -60,8 +59,8 @@ std::vector<std::vector<PointId>> extractClusters(PointView& view,
 
     // Create variables to track PointIds that have already been added to
     // clusters and to build the list of cluster indices.
-    std::vector<PointId> processed(view.size(), 0);
-    std::vector<std::vector<PointId>> clusters;
+    PointIdList processed(view.size(), 0);
+    std::vector<PointIdList> clusters;
 
     for (PointId i = 0; i < view.size(); ++i)
     {
@@ -71,7 +70,7 @@ std::vector<std::vector<PointId>> extractClusters(PointView& view,
 
         // Initialize list of indices belonging to current cluster, marking the
         // seed point as processed.
-        std::vector<PointId> seed_queue;
+        PointIdList seed_queue;
         size_t sq_idx = 0;
         seed_queue.push_back(i);
         processed[i] = 1;
@@ -83,7 +82,7 @@ std::vector<std::vector<PointId>> extractClusters(PointView& view,
         {
             // Find neighbors of the next cluster point.
             PointId j = seed_queue[sq_idx];
-            std::vector<PointId> ids = kdi.radius(j, tolerance);
+            PointIdList ids = kdi.radius(j, tolerance);
 
             // The case where the only neighbor is the query point.
             if (ids.size() == 1)
@@ -168,34 +167,41 @@ void segmentReturns(PointViewPtr input, PointViewPtr first,
     bool returnLast = false;
     bool returnOnly = false;
 
-    for (auto& r : returns)
+    if (!returns.size())
     {
-        Utils::trim(r);
-        if (r == "first")
-            returnFirst = true;
-        else if (r == "intermediate")
-            returnIntermediate = true;
-        else if (r == "last")
-            returnLast = true;
-        else if (r == "only")
-            returnOnly = true;
+        first->append(*input);
     }
-
-    for (PointId i = 0; i < input->size(); ++i)
+    else
     {
-        uint8_t rn = input->getFieldAs<uint8_t>(Id::ReturnNumber, i);
-        uint8_t nr = input->getFieldAs<uint8_t>(Id::NumberOfReturns, i);
-        
-        if ((((rn == 1) && (nr > 1)) && returnFirst) ||
-            (((rn > 1) && (rn < nr)) && returnIntermediate) ||
-            (((rn == nr) && (nr > 1)) && returnLast) ||
-            ((nr == 1) && returnOnly))
+        for (auto& r : returns)
         {
-            first->appendPoint(*input.get(), i);
+            Utils::trim(r);
+            if (r == "first")
+                returnFirst = true;
+            else if (r == "intermediate")
+                returnIntermediate = true;
+            else if (r == "last")
+                returnLast = true;
+            else if (r == "only")
+                returnOnly = true;
         }
-        else
+
+        for (PointId i = 0; i < input->size(); ++i)
         {
-            second->appendPoint(*input.get(), i);
+            uint8_t rn = input->getFieldAs<uint8_t>(Id::ReturnNumber, i);
+            uint8_t nr = input->getFieldAs<uint8_t>(Id::NumberOfReturns, i);
+            
+            if ((((rn == 1) && (nr > 1)) && returnFirst) ||
+                (((rn > 1) && (rn < nr)) && returnIntermediate) ||
+                (((rn == nr) && (nr > 1)) && returnLast) ||
+                ((nr == 1) && returnOnly))
+            {
+                first->appendPoint(*input.get(), i);
+            }
+            else
+            {
+                second->appendPoint(*input.get(), i);
+            }
         }
     }
 }

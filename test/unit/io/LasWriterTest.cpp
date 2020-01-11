@@ -1089,8 +1089,12 @@ TEST(LasWriterTest, fix1063_1064_1065)
 
     // https://github.com/PDAL/PDAL/issues/1065
     SpatialReference ref = v->spatialReference();
-    std::string wkt = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]]";
-    EXPECT_EQ(ref.getWKT(), wkt);
+    // This WKT is the leading common bit of WKT1 and WKT2 resolution.  When
+    // we're just doing WKT2, this can be improved.
+    std::string wkt {
+        R"(GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]])"
+    };
+    EXPECT_TRUE(Utils::startsWith(ref.getWKT(), wkt));
 }
 
 TEST(LasWriterTest, pdal_metadata)
@@ -1179,6 +1183,34 @@ TEST(LasWriterTest, pdal_add_vlr)
     EXPECT_EQ(nodes.size(), 2UL);
 }
 
+TEST(LasWriterTest, evlroffset)
+{
+    std::string outfile(Support::temppath("evlr.las"));
+
+    FileUtils::deleteFile(outfile);
+    {
+        LasWriter w;
+        Options wo;
+        std::vector<uint8_t> largeVlr(66000);
+        std::string vlr =
+            " [ { \"description\": \"A description under 32 bytes\", "
+            "\"record_id\": 42, \"user_id\": \"hobu\", \"data\": \"" +
+            Utils::base64_encode(largeVlr) + "\" }]";
+        wo.add("vlrs", vlr);
+        wo.add("minor_version", 4);
+        wo.add("filename", outfile);
+        w.setOptions(wo);
+
+        PointTable t;
+        w.prepare(t);
+        w.execute(t);
+        LasTester tester;
+        LasHeader* h = tester.header(w);
+        // No points in the file
+        EXPECT_EQ(h->eVlrOffset(), h->pointOffset());
+        EXPECT_EQ(h->eVlrCount(), 1u);
+    }
+}
 
 // Make sure that we can forward the LAS_Spec/3 VLR
 TEST(LasWriterTest, forward_spec_3)
@@ -1235,9 +1267,22 @@ TEST(LasWriterTest, forward_spec_3)
             !temp.findChild(recPred).empty() &&
             !temp.findChild(userPred).empty();
     };
+    MetadataNode origRoot = reader.getMetadata();
+    MetadataNodeList origNodes = origRoot.findChildren(pred);
+    EXPECT_EQ(origNodes.size(), 1u);
+    MetadataNode origNode = origNodes[0];
+
     MetadataNode root = reader2.getMetadata();
     MetadataNodeList nodes = root.findChildren(pred);
     EXPECT_EQ(nodes.size(), 1u);
+    MetadataNode node = nodes[0];
+
+    // Also test that we're properly forwarding data.
+    origNode = origNode.findChild("data");
+    node = node.findChild("data");
+    EXPECT_EQ(origNode.value().size(), 28u);
+    EXPECT_EQ(node.value().size(), origNode.value().size());
+    EXPECT_EQ(node.value(), origNode.value());
 }
 
 TEST(LasWriterTest, oversize_vlr)
@@ -1295,13 +1340,55 @@ TEST(LasWriterTest, issue1940)
     EXPECT_DOUBLE_EQ(h->scaleY(), .01);
 }
 
+// Make sure that we can forward scale from multiple files if they match.
+TEST(LasWRiterTest, issue2663)
+{
+    std::string outfile(Support::temppath("out.las"));
+    {
+        LasReader r1;
+        Options ro1;
+        ro1.add("filename", Support::datapath("las/prec3.las"));
+        r1.setOptions(ro1);
 
-#if defined(PDAL_HAVE_LAZPERF) || defined(PDAL_HAVE_LASZIP)
+        LasReader r2;
+        Options ro2;
+        ro2.add("filename", Support::datapath("las/prec3.las"));
+        r2.setOptions(ro2);
+
+        LasWriter w;
+        Options wo;
+        wo.add("filename", outfile);
+        wo.add("forward", "all");
+        w.setOptions(wo);
+        w.setInput(r1);
+        w.setInput(r2);
+
+        PointTable t;
+        w.prepare(t);
+        w.execute(t);
+    }
+
+    LasReader r;
+    Options ro;
+    ro.add("filename", outfile);
+    r.setOptions(ro);
+
+    PointTable t;
+    r.prepare(t);
+
+    const LasHeader& h = r.header();
+    EXPECT_EQ(h.scaleX(), .001);
+    EXPECT_EQ(h.scaleY(), .001);
+    EXPECT_EQ(h.scaleZ(), .001);
+}
+
+#if defined(PDAL_HAVE_LASZIP)
 // Make sure that we can translate this special test data to 1.4, dataformat 6.
 TEST(LasWriterTest, issue2320)
 {
     std::string outfile(Support::temppath("2320.laz"));
 
+    FileUtils::deleteFile(outfile);
     {
         LasReader r;
         Options ro;
@@ -1337,64 +1424,4 @@ TEST(LasWriterTest, issue2320)
     }
 }
 #endif
-
-/**
-
-namespace
-{
-
-bool diffdump(const std::string& f1, const std::string& f2)
-{
-    auto dump = [](const std::string& temp, const std::string& in)
-    {
-        std::stringstream ss;
-        ss << "lasdump -o " << temp << " " << in;
-        system(ss.str().c_str());
-    };
-
-    std::string t1 = Support::temppath("lasdump1.tmp");
-    std::string t2 = Support::temppath("lasdump2.tmp");
-
-    dump(t1, f1);
-    dump(t2, f2);
-
-    std::string diffFile = Support::temppath("dumpdiff.tmp");
-    std::stringstream ss;
-    ss << "diff " << t1 << " " << t2 << " > " << diffFile;
-    system(ss.str().c_str());
-
-    return true;
-}
-
-} // Unnamed namespace
-
-TEST(LasWriterTest, simple)
-{
-    PointTable table;
-
-    std::string infile(Support::datapath("las/1.2-with-color.las"));
-    std::string outfile(Support::temppath("simple.las"));
-
-    // remove file from earlier run, if needed
-    FileUtils::deleteFile(outfile);
-
-    Options readerOpts;
-    readerOpts.add("filename", infile);
-
-    Options writerOpts;
-    writerOpts.add("creation_year", 2014);
-    writerOpts.add("filename", outfile);
-
-    LasReader reader;
-    reader.setOptions(readerOpts);
-
-    LasWriter writer;
-    writer.setOptions(writerOpts);
-    writer.setInput(reader);
-    writer.prepare(table);
-    writer.execute(table);
-
-    diffdump(infile, outfile);
-}
-**/
 

@@ -36,8 +36,6 @@
 
 #include <list>
 
-#include <pdal/pdal_internal.hpp>
-
 #include <pdal/Dimension.hpp>
 #include <pdal/DimType.hpp>
 #include <pdal/Log.hpp>
@@ -77,8 +75,7 @@ class PDAL_DLL Stage
     friend class Streamable;
 public:
     Stage();
-    virtual ~Stage()
-        {}
+    virtual ~Stage();
 
     /**
       Add a stage to the input list of this stage.
@@ -298,7 +295,7 @@ public:
       MetadataNode.  Used to dump a pipeline specification in a portable
       format.
 
-      \param root  Node to which a stages meatdata should be added.
+      \param root  Node to which a stages metadata should be added.
       \param tags  Pipeline writer's current list of stage tags.
     */
     void serialize(MetadataNode root, PipelineWriter::TagMap& tags) const;

@@ -50,19 +50,22 @@ class PointView;
 class PDAL_DLL HAGFilter : public Filter
 {
 public:
-    HAGFilter() : Filter()
-    {}
+    HAGFilter();
+    HAGFilter& operator=(const HAGFilter&) = delete;
+    HAGFilter(const HAGFilter&) = delete;
 
     std::string getName() const;
 
 private:
-
+    virtual void addArgs(ProgramArgs& args);
     virtual void addDimensions(PointLayoutPtr layout);
     virtual void prepared(PointTableRef table);
     virtual void filter(PointView& view);
 
-    HAGFilter& operator=(const HAGFilter&); // not implemented
-    HAGFilter(const HAGFilter&); // not implemented
+    bool m_allowExtrapolation;
+    bool m_delaunay;
+    double m_maxDistance;
+    point_count_t m_count;
 };
 
 } // namespace pdal

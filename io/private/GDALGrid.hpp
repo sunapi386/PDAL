@@ -62,7 +62,7 @@ public:
 
     // Exported for testing.
     PDAL_DLL GDALGrid(size_t width, size_t height,
-        double edgeLength, double radius, int outputTypes, size_t windowSize);
+        double edgeLength, double radius, int outputTypes, size_t windowSize, double power);
 
     void expand(size_t width, size_t height, size_t xshift, size_t yshift);
 
@@ -90,6 +90,7 @@ private:
     size_t m_windowSize;
     double m_edgeLength;
     double m_radius;
+    double m_power;
 
     typedef std::vector<double> DataVec;
     typedef std::unique_ptr<DataVec> DataPtr;
@@ -141,6 +142,12 @@ private:
         double y1 = verticalPos(j);
         return sqrt(pow(x1 - x, 2) + pow(y1 - y, 2));
     }
+
+    // Update cells in the Nth quadrant about point at (x, y, z)
+    void updateFirstQuadrant(double x, double y, double z);
+    void updateSecondQuadrant(double x, double y, double z);
+    void updateThirdQuadrant(double x, double y, double z);
+    void updateFourthQuadrant(double x, double y, double z);
 
     // Update cell at i, j with value at a distance.
     void update(size_t i, size_t j, double val, double dist);

@@ -34,12 +34,11 @@
 
 #pragma once
 
-#include <pdal/pdal_internal.hpp>
 #include <pdal/Filter.hpp>
+#include <pdal/JsonFwd.hpp>
 
 #include "../plang/Invocation.hpp"
 
-#include <nlohmann/json.hpp>
 
 namespace pdal
 {
@@ -47,31 +46,27 @@ namespace pdal
 class PDAL_DLL PythonFilter : public Filter
 {
 public:
-    PythonFilter() : Filter(), m_script(NULL)
-        {}
+    PythonFilter();
+    virtual ~PythonFilter();
 
     std::string getName() const;
 
 private:
-    plang::Script* m_script;
-    plang::Invocation *m_pythonMethod;
-    std::string m_source;
-    std::string m_scriptFile;
-    std::string m_module;
-    std::string m_function;
-    StringList m_addDimensions;
+    PythonFilter& operator=(const PythonFilter&) = delete;
+    PythonFilter(const PythonFilter&) = delete;
 
     virtual void addArgs(ProgramArgs& args);
     virtual void addDimensions(PointLayoutPtr layout);
+    virtual void prepared(PointTableRef table);
     virtual void ready(PointTableRef table);
     virtual PointViewSet run(PointViewPtr view);
     virtual void done(PointTableRef table);
 
-    PythonFilter& operator=(const PythonFilter&); // not implemented
-    PythonFilter(const PythonFilter&); // not implemented
+    std::unique_ptr<plang::Script> m_script;
+    std::unique_ptr<plang::Invocation> m_pythonMethod;
 
-    MetadataNode m_totalMetadata;
-    NL::json m_pdalargs;
+    struct Args;
+    std::unique_ptr<Args> m_args;
 };
 
 } // namespace pdal

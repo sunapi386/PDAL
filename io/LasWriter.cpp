@@ -56,6 +56,8 @@
 #include <iostream>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include <pdal/pdal_features.hpp>
 #include <pdal/DimUtil.hpp>
 #include <pdal/PDALUtils.hpp>
@@ -87,7 +89,8 @@ CREATE_STATIC_STAGE(LasWriter, s_info)
 std::string LasWriter::getName() const { return s_info.name; }
 
 LasWriter::LasWriter() : m_compressor(nullptr), m_ostream(NULL),
-    m_compression(LasCompression::None), m_srsCnt(0)
+    m_compression(LasCompression::None), m_srsCnt(0),
+    m_userVLRs(new NL::json)
 {}
 
 
@@ -117,6 +120,7 @@ void LasWriter::addArgs(ProgramArgs& args)
         m_extraDimSpec);
     args.add("forward", "Dimensions to forward from LAS reader", m_forwardSpec);
 
+    args.add("filesource_id", "File source ID number.", m_filesourceId);
     args.add("major_version", "LAS major version", m_majorVersion,
         decltype(m_majorVersion)(1));
     args.add("minor_version", "LAS minor version", m_minorVersion,
@@ -144,7 +148,7 @@ void LasWriter::addArgs(ProgramArgs& args)
     args.add("offset_x", "X offset", m_offsetX);
     args.add("offset_y", "Y offset", m_offsetY);
     args.add("offset_z", "Z offset", m_offsetZ);
-    args.add("vlrs", "List of VLRs to set", m_userVLRs);
+    args.add("vlrs", "List of VLRs to set", *m_userVLRs);
 }
 
 void LasWriter::initialize()
@@ -152,7 +156,11 @@ void LasWriter::initialize()
     std::string ext = FileUtils::extension(m_filename);
     ext = Utils::tolower(ext);
     if ((ext == ".laz") && (m_compression == LasCompression::None))
+#if defined(PDAL_HAVE_LASZIP)
         m_compression = LasCompression::LasZip;
+#elif defined(PDAL_HAVE_LAZPERF)
+        m_compression = LasCompression::LazPerf;
+#endif
 
     if (!m_aSrs.empty())
         setSpatialReference(m_aSrs);
@@ -228,7 +236,7 @@ void LasWriter::prepared(PointTableRef table)
 // Capture user-specified VLRs
 void LasWriter::addUserVlrs()
 {
-    for (const auto& v : m_userVLRs)
+    for (const auto& v : *m_userVLRs)
     {
         uint16_t recordId(1);
         std::string userId("");
@@ -463,7 +471,8 @@ void LasWriter::addForwardVlrs()
         const MetadataNode& recordIdNode = n.findChild("record_id");
         if (recordIdNode.valid() && userIdNode.valid())
         {
-            data = Utils::base64_decode(n.value());
+            const MetadataNode& dataNode = n.findChild("data");
+            data = Utils::base64_decode(dataNode.value());
             uint16_t recordId = (uint16_t)std::stoi(recordIdNode.value());
             addVlr(userIdNode.value(), recordId, n.description(), data);
         }
@@ -1182,6 +1191,7 @@ void LasWriter::finishOutput()
     OLeStream out(m_ostream);
 
     // addVlr prevents any eVlrs from being added before version 1.4.
+    m_lasHeader.setEVlrOffset((uint32_t)m_ostream->tellp());
     for (auto vi = m_eVlrs.begin(); vi != m_eVlrs.end(); ++vi)
     {
         ExtLasVLR evlr = *vi;
